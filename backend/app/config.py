@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
+    # Edge Device Authentication
+    EDGE_DEVICE_API_KEY: str = "edge-device-secret-key-change-in-production"
+    
     # Application
     APP_NAME: str = "Med-Chatbot Hospital Platform"
     DEBUG: bool = True

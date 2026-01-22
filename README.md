@@ -7,8 +7,8 @@ A distributed hospital web platform integrating AI-based patient monitoring, edg
 
 ## 🚀 Project Status
 
-**Current Phase:** ✅ STEP 1 COMPLETE - Backend Core & Authentication  
-**Next Phase:** STEP 2 - Vitals Monitoring Edge Device
+**Current Phase:** ✅ STEP 2 COMPLETE - Alert Ingestion & Display  
+**Next Phase:** STEP 3 - TBD
 
 ---
 
@@ -16,18 +16,21 @@ A distributed hospital web platform integrating AI-based patient monitoring, edg
 
 ### Architecture
 - **Laptop 1 (Central Server):** FastAPI Backend + PostgreSQL Database
-- **Laptop 2 (Edge Device):** Vitals Monitoring (Heart Rate, SpO2, BP) - *Coming in STEP 2*
-- **Laptop 3 (Edge Device):** Coma Patient Monitoring (OpenCV) - *Coming in STEP 3*
-- **Laptop 4 (Frontend):** React Web Application - *Coming Next*
+- **Laptop 2 (Edge Device):** Vitals Monitoring (Heart Rate, SpO2, BP) - *Simulated*
+- **Laptop 3 (Edge Device):** Coma Patient Monitoring (OpenCV) - *Simulated*
+- **Laptop 4 (Frontend):** React Web Application - ✅ Implemented
 
 ### Core Features
-1. **Vitals Monitoring** - Edge AI-based threshold detection
-2. **Coma Patient Monitoring** - Movement detection via camera/gyro
-3. **Post-Discharge AI Assistant** - RAG-based chatbot with symptom tracking
+1. **✅ Alert System** - Edge device alert ingestion and display
+2. **Vitals Monitoring** - Edge AI-based threshold detection (*Coming*)
+3. **Coma Patient Monitoring** - Movement detection via camera/gyro (*Coming*)
+4. **Post-Discharge AI Assistant** - RAG-based chatbot with symptom tracking (*Coming*)
 
 ---
 
 ## 🎯 STEP 1 Deliverables (COMPLETED)
+
+**Status:** ✅ Backend Core & Authentication
 
 ### ✅ Backend Implementation
 - **Tech Stack:** FastAPI + SQLAlchemy + PostgreSQL
@@ -49,9 +52,22 @@ Med-chatbot/
 │   │   ├── database.py
 │   │   └── main.py
 │   └── requirements.txt
+├── frontend/            # React Web Application
+│   ├── src/
+│   │   ├── components/  # Reusable components
+│   │   ├── context/     # Auth context
+│   │   ├── pages/       # Dashboard pages
+│   │   ├── services/    # API client
+│   │   ├── utils/       # Route protection
+│   │   └── App.jsx
+│   └── package.json
+├── edge_devices/        # Edge device simulators
+│   └── send_alert.py    # Alert simulator script
 ├── docs/
 │   ├── setup_guide.md   # Installation instructions
-│   └── api_contracts.md # API documentation
+│   ├── api_contracts.md # API documentation
+│   ├── STEP2_TESTING_GUIDE.md  # Testing instructions
+│   └── STEP2_SUMMARY.md # STEP 2 completion report
 ├── dev_memory.md        # Development decisions log
 └── README.md
 ```
@@ -63,14 +79,17 @@ Med-chatbot/
 - `POST /api/auth/login` - Login and receive JWT
 - `GET /api/auth/me` - Get current user info
 
+#### Alert System (NEW in STEP 2)
+- `POST /api/alerts` - Edge device alert ingestion (API Key auth)
+- `GET /api/alerts` - Get user's alerts with role-based filtering
+- `POST /api/alerts/{id}/acknowledge` - Acknowledge an alert
+
 #### Doctor Routes
 - `GET /api/doctor/patients` - Get assigned patients
 - `GET /api/doctor/patients/{id}` - Get patient details
-- `GET /api/doctor/alerts` - Get alerts (placeholder)
 
 #### Nurse Routes
 - `GET /api/nurse/patients` - Get ward patients
-- `GET /api/nurse/alerts` - Get alerts (placeholder)
 
 #### Patient Routes
 - `GET /api/patient/profile` - Get own profile
@@ -86,13 +105,45 @@ Med-chatbot/
 
 ---
 
+## 🎯 STEP 2 Deliverables (COMPLETED)
+
+**Status:** ✅ Alert Ingestion & Display
+
+### Backend Features
+- **Alert Model:** Database table with enums (AlertType, AlertSeverity, AlertSource, AlertStatus)
+- **Alert API:** 3 endpoints for create, retrieve, acknowledge
+- **Edge Device Auth:** API key authentication via X-API-Key header
+- **Role-Based Filtering:** Doctors see assigned patients, nurses see ward patients
+
+### Frontend Features
+- **Login Page:** Authentication with role-based navigation
+- **Doctor Dashboard:** Alerts panel + patient list with tabs
+- **Nurse Dashboard:** Alerts panel + ward patient list with tabs
+- **AlertsPanel Component:** Real-time polling (5 sec), filtering, acknowledge functionality
+- **Severity Styling:** Color-coded alerts (red/yellow/green)
+- **Protected Routes:** Role-based access control
+
+### Edge Device Tools
+- **send_alert.py:** Interactive alert simulator with 5 options
+- Supports all alert types (Vitals, Coma, Chatbot)
+- Health check on startup
+
+### Documentation
+- **STEP2_TESTING_GUIDE.md:** 10+ test scenarios with validation steps
+- **STEP2_SUMMARY.md:** Complete technical documentation
+
+**Files Created:** 26 new files, 5 modified files
+
+---
+
 ## 🛠️ Setup Instructions
 
 ### Prerequisites
 - Python 3.9+
 - PostgreSQL 13+
+- Node.js 18+ (for frontend)
 
-### Quick Start
+### Backend Setup
 
 ```bash
 # 1. Install PostgreSQL and create database
@@ -108,14 +159,34 @@ pip install -r requirements.txt
 
 # 3. Configure environment
 cp .env.example .env
-# Edit .env with your database credentials
+# Edit .env with your database credentials and API key
 
 # 4. Run the server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Access API
-- **API Documentation:** http://localhost:8000/docs
+### Frontend Setup
+
+```bash
+# 1. Install dependencies
+cd frontend
+npm install
+
+# 2. Start development server
+npm start
+```
+
+### Edge Device Simulator
+
+```bash
+# Run alert simulator
+cd edge_devices
+python send_alert.py
+```
+
+### Access Applications
+- **Backend API:** http://localhost:8000/docs
+- **Frontend App:** http://localhost:3000
 - **Health Check:** http://localhost:8000/health
 
 ---
@@ -124,6 +195,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 - **[Setup Guide](docs/setup_guide.md)** - Detailed installation steps
 - **[API Contracts](docs/api_contracts.md)** - Complete API documentation
+- **[STEP 2 Testing Guide](docs/STEP2_TESTING_GUIDE.md)** - Test scenarios and validation
+- **[STEP 2 Summary](docs/STEP2_SUMMARY.md)** - Technical implementation details
 - **[Dev Memory](dev_memory.md)** - Project decisions and progress log
 
 ---
@@ -142,9 +215,8 @@ Ward assignment, shift info. Links to Users table.
 ### Patients Table
 Patient number, DOB, admission/discharge dates, assigned doctor, ward, bed number.
 
-### Future Tables (STEP 2+)
-- Alerts (vitals, coma movement)
-- Vitals (time-series data)
+### Alerts Table (NEW in STEP 2)
+Alert type, message, severity, source, status, acknowledged_by, timestamps. Links to Patients and Users.
 - Chat History (AI assistant)
 - Daily Check-ins (symptom tracking)
 

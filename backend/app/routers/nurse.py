@@ -56,8 +56,8 @@ async def get_ward_patients(
 
 @router.get("/alerts")
 async def get_nurse_alerts(current_user: User = Depends(get_current_nurse)):
-    """Get all active alerts for nurse's ward (placeholder for future)."""
+    """Get all active alerts for nurse's ward (redirects to /api/alerts endpoint)"""
     return {
-        "message": "Alert functionality will be implemented in STEP 2",
-        "alerts": []
+        "message": "Please use GET /api/alerts endpoint to retrieve alerts",
+        "note": "The alerts endpoint handles role-based filtering automatically"
     }

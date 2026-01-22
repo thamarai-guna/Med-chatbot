@@ -103,8 +103,8 @@ async def get_patient_details(
 
 @router.get("/alerts")
 async def get_doctor_alerts(current_user: User = Depends(get_current_doctor)):
-    """Get all alerts for doctor's patients (placeholder for future)."""
+    """Get all alerts for doctor's patients (redirects to /api/alerts endpoint)"""
     return {
-        "message": "Alert functionality will be implemented in STEP 2",
-        "alerts": []
+        "message": "Please use GET /api/alerts endpoint to retrieve alerts",
+        "note": "The alerts endpoint handles role-based filtering automatically"
     }

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .database import engine, Base
-from .routers import auth, doctor, nurse, patient, admin
+from .routers import auth, doctor, nurse, patient, admin, alerts
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -29,6 +29,7 @@ app.include_router(doctor.router, prefix=settings.API_V1_PREFIX)
 app.include_router(nurse.router, prefix=settings.API_V1_PREFIX)
 app.include_router(patient.router, prefix=settings.API_V1_PREFIX)
 app.include_router(admin.router, prefix=settings.API_V1_PREFIX)
+app.include_router(alerts.router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/")

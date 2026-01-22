@@ -131,11 +131,18 @@ def display_chatbot_page():
             with st.chat_message("assistant"):
                 st.write(answer)
                 
-                # Display risk assessment
-                if risk_level == "HIGH":
-                    st.error(f"🚨 Risk Level: {risk_level} - {risk_reason}")
+                # Display risk assessment with color coding
+                if risk_level == "CRITICAL":
+                    st.error(f"🚨🚨 CRITICAL RISK: {risk_reason}")
+                    st.error("⚠️ SEEK IMMEDIATE EMERGENCY MEDICAL CARE - CALL 911")
+                elif risk_level == "HIGH":
+                    st.error(f"🚨 HIGH RISK: {risk_reason}")
+                    st.warning("Urgent medical attention recommended within hours")
                 elif risk_level == "MEDIUM":
-                    st.warning(f"⚠️ Risk Level: {risk_level} - {risk_reason}")
+                    st.warning(f"⚠️ MEDIUM RISK: {risk_reason}")
+                    st.info("Medical evaluation recommended soon")
+                elif risk_level == "LOW":
+                    st.info(f"ℹ️ LOW RISK: {risk_reason}")
                 else:
                     st.info(f"ℹ️ Risk Level: {risk_level} - {risk_reason}")
             

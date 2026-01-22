@@ -6,7 +6,7 @@ Handles PDF/TXT reading, text splitting, and vector store management
 import streamlit as st
 from pypdf import PdfReader
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from dotenv import load_dotenv
 

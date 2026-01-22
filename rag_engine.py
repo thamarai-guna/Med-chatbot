@@ -4,6 +4,7 @@ Streamlit-independent module for RAG-based question answering with Groq LLM API
 """
 
 import os
+import json
 import requests
 from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
@@ -101,7 +102,7 @@ class RAGEngine:
     
     def _assess_medical_risk(self, question: str, answer: str, context: str) -> Dict[str, str]:
         """
-        Assess medical risk level based on question and answer
+        Assess medical risk level using LLM reasoning
         
         Args:
             question: User's question
@@ -111,38 +112,180 @@ class RAGEngine:
         Returns:
             dict with risk_level and risk_reason
         """
-        # Risk keywords detection
+        # Build chat history context for risk assessment
+        history_summary = ""
+        if self.chat_history:
+            recent_exchanges = self.chat_history[-3:]  # Last 3 exchanges
+            history_summary = "\n".join([
+                f"Previous Q: {h['question']}\nPrevious A: {h['answer'][:200]}"
+                for h in recent_exchanges
+            ])
+        
+        # Create risk assessment prompt
+        risk_prompt = self._create_risk_assessment_prompt(
+            question=question,
+            answer=answer,
+            context=context,
+            history=history_summary
+        )
+        
+        try:
+            # Call Groq API for risk assessment
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                return {
+                    "risk_level": "UNKNOWN",
+                    "risk_reason": "API key not configured"
+                }
+            
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "model": "llama-3.1-70b-versatile",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": self._get_risk_assessment_system_prompt()
+                    },
+                    {
+                        "role": "user",
+                        "content": risk_prompt
+                    }
+                ],
+                "max_tokens": 300,
+                "temperature": 0.3,  # Lower temperature for more consistent risk assessment
+                "response_format": {"type": "json_object"}
+            }
+            
+            response = requests.post(url, json=payload, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            data = response.json()
+            risk_json = data["choices"][0]["message"]["content"].strip()
+            
+            # Parse JSON response
+            import json
+            risk_data = json.loads(risk_json)
+            
+            # Normalize risk_level to uppercase
+            risk_level = risk_data.get("risk_level", "UNKNOWN").upper()
+            risk_reason = risk_data.get("risk_reason", "Unable to assess risk")
+            
+            return {
+                "risk_level": risk_level,
+                "risk_reason": risk_reason
+            }
+            
+        except Exception as e:
+            # Fallback to basic keyword detection if LLM fails
+            return self._fallback_risk_assessment(question, answer, context)
+    
+    def _get_risk_assessment_system_prompt(self) -> str:
+        """
+        System prompt for risk assessment
+        """
+        return """You are a medical risk assessment AI for a hospital triage system. Your task is to evaluate medical queries and assign a risk level.
+
+CRITICAL RULES:
+1. You MUST respond with valid JSON only (no other text)
+2. JSON format: {"risk_level": "LOW|MEDIUM|HIGH|CRITICAL", "risk_reason": "brief explanation"}
+3. risk_reason must be 1-2 sentences maximum
+
+RISK LEVEL DEFINITIONS:
+- CRITICAL: Life-threatening emergencies requiring immediate intervention (cardiac arrest, severe trauma, stroke symptoms, major bleeding, loss of consciousness, severe breathing difficulty)
+- HIGH: Urgent conditions needing prompt medical attention within hours (chest pain, acute severe symptoms, neurological changes, worsening symptoms over days)
+- MEDIUM: Conditions requiring medical evaluation soon (persistent pain, fever, infections, new symptoms, chronic disease management)
+- LOW: General health information, preventive care, mild symptoms, educational queries
+
+RISK ESCALATION FACTORS:
+- Symptoms worsening over multiple days → increase risk by 1 level
+- Neurological red flags (confusion, vision changes, numbness, weakness) → HIGH or CRITICAL
+- Cardiovascular symptoms (chest pain, palpitations with other symptoms) → HIGH or CRITICAL
+- Breathing difficulty or severe pain → HIGH minimum
+- Multiple concerning symptoms together → increase risk by 1 level
+- Patient expressing distress or concern about severity → increase risk consideration
+
+IMPORTANT: Consider the conversation history for progression of symptoms. If symptoms are recurring or worsening across multiple questions, this indicates higher risk."""
+
+    def _create_risk_assessment_prompt(self, question: str, answer: str, context: str, history: str) -> str:
+        """
+        User prompt for risk assessment with all context
+        """
+        prompt = f"""Assess the medical risk level for this patient interaction.
+
+PATIENT QUESTION:
+{question}
+
+MEDICAL ANSWER PROVIDED:
+{answer}
+
+RELEVANT MEDICAL CONTEXT FROM DOCUMENTS:
+{context[:800]}"""
+
+        if history:
+            prompt += f"""
+
+CONVERSATION HISTORY (for symptom progression analysis):
+{history}"""
+
+        prompt += """
+
+Analyze the above information and respond with JSON only:
+{
+  "risk_level": "LOW|MEDIUM|HIGH|CRITICAL",
+  "risk_reason": "Brief explanation (1-2 sentences max)"
+}"""
+
+        return prompt
+    
+    def _fallback_risk_assessment(self, question: str, answer: str, context: str) -> Dict[str, str]:
+        """
+        Fallback keyword-based risk assessment if LLM fails
+        """
+        combined_text = (question + " " + answer + " " + context).lower()
+        
+        critical_keywords = [
+            "cardiac arrest", "not breathing", "unconscious", "unresponsive",
+            "severe bleeding", "major trauma", "stroke symptoms"
+        ]
+        
         high_risk_keywords = [
-            "emergency", "urgent", "severe", "critical", "chest pain", "stroke", 
-            "heart attack", "bleeding", "unconscious", "breathing difficulty",
-            "suicide", "overdose", "trauma", "acute", "life-threatening"
+            "chest pain", "stroke", "heart attack", "severe", "breathing difficulty",
+            "confusion", "vision loss", "numbness", "weakness", "suicide"
         ]
         
         medium_risk_keywords = [
-            "pain", "fever", "infection", "injury", "symptoms", "treatment",
-            "medication", "diagnosis", "chronic", "persistent", "abnormal"
+            "pain", "fever", "infection", "persistent", "worsening", "chronic"
         ]
         
-        # Check question and answer content
-        combined_text = (question + " " + answer + " " + context).lower()
+        for keyword in critical_keywords:
+            if keyword in combined_text:
+                return {
+                    "risk_level": "CRITICAL",
+                    "risk_reason": f"Life-threatening condition detected. Immediate medical attention required."
+                }
         
         for keyword in high_risk_keywords:
             if keyword in combined_text:
                 return {
                     "risk_level": "HIGH",
-                    "risk_reason": f"Detected urgent medical keywords: '{keyword}'. Immediate medical attention may be required."
+                    "risk_reason": f"Urgent medical attention may be needed within hours."
                 }
         
         for keyword in medium_risk_keywords:
             if keyword in combined_text:
                 return {
                     "risk_level": "MEDIUM",
-                    "risk_reason": f"Medical attention may be needed. Consider consulting a healthcare professional."
+                    "risk_reason": "Medical evaluation recommended soon."
                 }
         
         return {
             "risk_level": "LOW",
-            "risk_reason": "General medical information query. No immediate concerns detected."
+            "risk_reason": "General medical information query with no immediate concerns."
         }
     
     def answer_question(self, question: str, context_docs: Optional[List[str]] = None) -> Dict[str, Any]:

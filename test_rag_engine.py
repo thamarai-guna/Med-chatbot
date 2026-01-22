@@ -73,13 +73,15 @@ def test_rag_engine_class():
 def test_risk_assessment():
     """Test risk assessment with different question types"""
     print("\n" + "=" * 60)
-    print("TEST 3: Risk Assessment")
+    print("TEST 3: LLM-Based Risk Assessment")
     print("=" * 60)
     
     test_questions = [
-        ("What is a healthy diet?", "Should be LOW risk"),
-        ("I have persistent chest pain", "Should be HIGH risk"),
-        ("How to treat a fever?", "Should be MEDIUM risk"),
+        ("What is a healthy diet?", "Expected: LOW"),
+        ("I have a mild headache", "Expected: LOW or MEDIUM"),
+        ("I've had chest pain for 2 hours", "Expected: HIGH"),
+        ("My father collapsed and isn't breathing", "Expected: CRITICAL"),
+        ("I have numbness in my left arm and confusion", "Expected: HIGH or CRITICAL"),
     ]
     
     try:
@@ -88,7 +90,7 @@ def test_risk_assessment():
         for question, expected in test_questions:
             result = engine.answer_question(question)
             print(f"\n📝 Q: {question}")
-            print(f"⚠️  Risk: {result['risk_level']} - {expected}")
+            print(f"⚠️  Risk: {result['risk_level']} ({expected})")
             print(f"📋 Reason: {result['risk_reason']}")
             
     except Exception as e:

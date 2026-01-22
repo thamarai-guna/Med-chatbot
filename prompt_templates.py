@@ -121,7 +121,7 @@ Previous A: Common signs include chest discomfort, shortness of breath, irregula
 # ==============================================================================
 
 API_CONFIG = {
-    "model": "llama-3.1-70b-versatile",
+    "model": "llama-3.3-70b-versatile",
     "temperature": 0.3,  # Lower for consistent risk assessment
     "max_tokens": 300,
     "response_format": {"type": "json_object"}  # Enforces JSON-only response

@@ -231,8 +231,20 @@ def display_document_embedding_page():
                 else:
                     st.error("Check if the uploaded file is .pdf or .txt")
 
+            # Show progress for chunking process
+            st.info(f"📄 Loaded {len(combined_content):,} characters. Starting chunking process...")
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            status_text.write("🔄 Chunking document with 512 character chunks and 50 character overlap...")
+            progress_bar.progress(25)
+            
             # Split combined content into chunks
             split = falcon.split_doc(combined_content, chunk_size, chunk_overlap)
+            progress_bar.progress(50)
+            
+            status_text.write(f"✅ Chunking complete: Created {len(split)} chunks")
+            progress_bar.progress(100)
 
             # Check whether to create new vector store
             create_new_vs = None

@@ -8,7 +8,7 @@ import json
 import requests
 from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
 load_dotenv()
@@ -51,6 +51,8 @@ class RAGEngine:
                 allow_dangerous_deserialization=True
             )
             
+            # Store both the vector store and retriever
+            self.vector_store = loaded_db
             self.retriever = loaded_db.as_retriever(search_kwargs={"k": 3})
             
         except Exception as e:
@@ -79,7 +81,7 @@ class RAGEngine:
         }
         
         payload = {
-            "model": "llama-3.1-70b-versatile",
+            "model": "llama-3.3-70b-versatile",
             "messages": [
                 {
                     "role": "user",
@@ -91,12 +93,19 @@ class RAGEngine:
         }
         
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=30)
+            response = requests.post(url, json=payload, headers=headers, timeout=60)
             response.raise_for_status()
             
             data = response.json()
             return data["choices"][0]["message"]["content"].strip()
             
+        except requests.exceptions.HTTPError as e:
+            # Try to extract error details from response
+            try:
+                error_detail = e.response.json() if hasattr(e.response, 'json') else str(e.response.text)
+                return f"Error calling Groq API: {e.response.status_code} - {str(error_detail)}"
+            except:
+                return f"Error calling Groq API: {str(e)}"
         except requests.exceptions.RequestException as e:
             return f"Error calling Groq API: {str(e)}"
     
@@ -145,7 +154,7 @@ class RAGEngine:
             }
             
             payload = {
-                "model": "llama-3.1-70b-versatile",
+                "model": "llama-3.3-70b-versatile",
                 "messages": [
                     {
                         "role": "system",
@@ -314,7 +323,8 @@ Analyze the above information and respond with JSON only:
                         "source_documents": []
                     }
                 
-                relevant_docs = self.retriever.get_relevant_documents(question)
+                # Use invoke method instead of get_relevant_documents
+                relevant_docs = self.retriever.invoke(question)
                 source_documents = [doc.page_content for doc in relevant_docs]
                 context = "\n\n".join(source_documents[:3])
             else:

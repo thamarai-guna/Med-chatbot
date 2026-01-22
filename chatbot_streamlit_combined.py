@@ -1,6 +1,8 @@
 import streamlit as st
 import os
 import falcon
+import rag_engine
+from rag_engine import RAGEngine
 import torch
 import time
 import gc
@@ -51,24 +53,16 @@ def display_chatbot_page():
     with st.expander("Initialize the LLM Model"):
         
         st.markdown("""
-            Please Insert the Token and Select Vector Store, Temperature, and Maximum Character Length to create the chatbot.
+            Please Select Vector Store, Temperature, and Maximum Token Length to create the chatbot.
 
             **NOTE:**
-            - **Token:** API Key From Hugging Face.
-            - **Temperature:** How much creative the chatbot will be? Don't Insert 0 or More Than 1.""")
+            - **Groq API:** Set GROQ_API_KEY in your .env file
+            - **Temperature:** Creativity level (0.0 = focused, 1.0 = creative)
+            - **Max Tokens:** Maximum response length (keep low to reduce costs)
+            """)
         with st.form("setting"):
-            row_1 = st.columns(3)
+            row_1 = st.columns(2)
             with row_1[0]:
-                text = st.text_input("Hugging Face Token (No need to insert)", type='password',value= f"{'*' * len(os.getenv('API_KEY'))}")
-
-            with row_1[1]:
-                llm_model = st.text_input("LLM model", value="meta-llama/Meta-Llama-3-8B")
-
-            with row_1[2]:
-                instruct_embeddings = st.text_input("Instruct Embeddings", value="sentence-transformers/all-MiniLM-L6-v2")
-
-            row_2 = st.columns(3)
-            with row_2[0]:
                 vector_store_list = os.listdir("vector store/")
                 default_choice = (
                     vector_store_list.index('naruto_snake')
@@ -77,23 +71,29 @@ def display_chatbot_page():
                 )
                 existing_vector_store = st.selectbox("Vector Store", vector_store_list, default_choice)
             
-            with row_2[1]:
-                temperature = st.number_input("Temperature", value=1.0, step=0.1)
+            with row_1[1]:
+                temperature = st.number_input("Temperature", value=0.7, step=0.1, min_value=0.0, max_value=1.0)
 
-            with row_2[2]:
-                max_length = st.number_input("Maximum character length", value=300, step=1)
+            max_length = st.number_input("Maximum tokens", value=500, step=50, min_value=100, max_value=2000)
 
             create_chatbot = st.form_submit_button("Launch chatbot")
 
 
-    # Prepare the LLM model
-    if "conversation" not in st.session_state:
-        st.session_state.conversation = None
+    # Prepare the RAG Engine
+    if "rag_engine" not in st.session_state:
+        st.session_state.rag_engine = None
 
-    if token:
-        st.session_state.conversation = falcon.prepare_rag_llm(
-            token, existing_vector_store, temperature, max_length
-        )
+    groq_key = os.getenv("GROQ_API_KEY")
+    if groq_key and create_chatbot:
+        try:
+            st.session_state.rag_engine = RAGEngine(
+                vector_store_name=existing_vector_store,
+                max_tokens=max_length,
+                temperature=temperature
+            )
+            st.success("✅ Chatbot initialized successfully!")
+        except Exception as e:
+            st.error(f"Error initializing chatbot: {str(e)}")
 
     # Chat history
     if "history" not in st.session_state:
@@ -116,15 +116,40 @@ def display_chatbot_page():
         with st.chat_message("user"):
             st.markdown(question)
 
-        # Answer the question
-        answer, doc_source = falcon.generate_answer(question, token)
-        with st.chat_message("assistant"):
-            st.write(answer)
-        # Append assistant answer to history
-        st.session_state.history.append({"role": "assistant", "content": answer})
+        # Answer the question using RAG Engine
+        if st.session_state.rag_engine is None:
+            with st.chat_message("assistant"):
+                st.error("Please initialize the chatbot first by clicking 'Launch chatbot'")
+        else:
+            result = st.session_state.rag_engine.answer_question(question)
+            
+            answer = result["answer"]
+            risk_level = result["risk_level"]
+            risk_reason = result["risk_reason"]
+            doc_source = result["source_documents"]
+            
+            with st.chat_message("assistant"):
+                st.write(answer)
+                
+                # Display risk assessment
+                if risk_level == "HIGH":
+                    st.error(f"🚨 Risk Level: {risk_level} - {risk_reason}")
+                elif risk_level == "MEDIUM":
+                    st.warning(f"⚠️ Risk Level: {risk_level} - {risk_reason}")
+                else:
+                    st.info(f"ℹ️ Risk Level: {risk_level} - {risk_reason}")
+            
+            # Append assistant answer to history
+            st.session_state.history.append({"role": "assistant", "content": answer})
 
-        # Append the document sources
-        st.session_state.source.append({"question": question, "answer": answer, "document": doc_source})
+            # Append the document sources with risk info
+            st.session_state.source.append({
+                "question": question, 
+                "answer": answer, 
+                "risk_level": risk_level,
+                "risk_reason": risk_reason,
+                "document": doc_source
+            })
 
 
     # Source documents

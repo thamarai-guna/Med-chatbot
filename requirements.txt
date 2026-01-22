@@ -8,3 +8,4 @@ streamlit
 pynvml
 torch
 python-dotenv
+requests

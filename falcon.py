@@ -1,14 +1,15 @@
+"""
+Document Processing Utilities
+Handles PDF/TXT reading, text splitting, and vector store management
+"""
+
 import streamlit as st
-from langchain_community.document_loaders import TextLoader
 from pypdf import PdfReader
-from langchain_community.llms import HuggingFaceHub
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceInstructEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain.chains import ConversationalRetrievalChain
-from langchain.memory import ConversationBufferWindowMemory
 from dotenv import load_dotenv
+
 load_dotenv()
 
 
@@ -65,53 +66,4 @@ def embedding_storing( split, create_new_vs, existing_vector_store, new_vs_name)
             
         #chatbot_streamlit_combined.main_place()
         st.success("The document has been saved.")
-        
-        
-def prepare_rag_llm(
-    token, vector_store_list, temperature, max_length
-):
-    instructor_embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2", 
-                                           model_kwargs={'device': 'cpu'})
-    # Load db
-    loaded_db = FAISS.load_local(
-        f"vector store/{vector_store_list}", instructor_embeddings, allow_dangerous_deserialization=True
-    )
-    llm = HuggingFaceHub(
-        repo_id = 'meta-llama/Meta-Llama-3-8B',
-        model_kwargs={"temperature": temperature, "max_length": max_length},
-        huggingfacehub_api_token=token
-    )
 
-    memory = ConversationBufferWindowMemory(
-        k=2,
-        memory_key="chat_history",
-        output_key="answer",
-        return_messages=True,
-    )
-
-    # Create the chatbot
-    qa_conversation = ConversationalRetrievalChain.from_llm(
-        llm=llm,
-        chain_type="stuff",
-        retriever=loaded_db.as_retriever(search_kwargs={"k": 3}),
-        return_source_documents=True,
-        memory=memory,
-    )
-
-    return qa_conversation
-
-
-def generate_answer(question, token):
-    answer = "An error has occured"
-
-    if token == "":
-        answer = "Insert the Hugging Face token"
-        doc_source = ["no source"]
-    else:
-        response = st.session_state.conversation({"question": question})
-        answer = response.get("answer").split("Helpful Answer:")[-1].strip()
-        explanation = response.get("source_documents", [])
-        doc_source = [d.page_content for d in explanation]
-
-    return answer, doc_source
-    

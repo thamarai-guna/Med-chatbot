@@ -1,318 +1,129 @@
-# Med-Chatbot - Centralized Hospital Platform
+# RAG-Based-Multi-Source-Chatbot-Using-LLM
 
-**Healthcare Hackathon Project**  
-A distributed hospital web platform integrating AI-based patient monitoring, edge device alerting, and post-discharge patient assistance.
+## Introduction
 
----
+In general, chatbots are used for information retrieval. Traditional chatbots typically work based on predefined rules and keyword matching. These chatbots rely on a fixed knowledge base or database of predefined responses. The responses are manually inserted into the database by the developer. When a user inserts a query, the chatbot looks for the rules that match the question and provides the hardcoded response. This method doesn't support paraphrasing or generation of new responses.
 
-## 🚀 Project Status
+Nowadays, LLM-based chatbots are in high demand. LLM-based chatbots can be of two types:
 
-**Current Phase:** ✅ STEP 2 COMPLETE - Alert Ingestion & Display  
-**Next Phase:** STEP 3 - TBD
+1. **LLM-Based Chatbots without RAG:** Large Language Models (LLM) such as OpenAI's GPT or Meta's LLaMA are trained with billions of parameters and huge amounts of textual data. These models can be used via APIs provided by their respective organizations. However, these chatbots generate responses directly from the data they were trained on, without considering any external knowledge base, similar to how ChatGPT operates.
 
----
+2. **LLM-Based Chatbots with RAG:** RAG stands for Retrieval-Augmented Generation. This approach uses two main components: generation and retrieval. Unlike LLM-based chatbots without RAG, RAG-based chatbots utilize external data sources such as PDFs, text files, or databases as a knowledge base along with the trained LLM model. When a user asks a question, the chatbot first retrieves similar text chunks from the external knowledge base. These text chunks are then used as prompts for the LLM model, which generates a more precise and contextually relevant answer.
 
-## 📋 System Overview
+In this project, a multi-source chatbot using RAG has been implemented. Users can upload various types of documents like PDFs and text files as an external knowledge base and interact with the chatbot to get answers that reference the knowledge base. The chatbot utilizes both the knowledge base and the pre-trained LLM to provide reliable, relevant, and organized answers.
 
-### Architecture
-- **Laptop 1 (Central Server):** FastAPI Backend + PostgreSQL Database
-- **Laptop 2 (Edge Device):** Vitals Monitoring (Heart Rate, SpO2, BP) - *Simulated*
-- **Laptop 3 (Edge Device):** Coma Patient Monitoring (OpenCV) - *Simulated*
-- **Laptop 4 (Frontend):** React Web Application - ✅ Implemented
+## High-Level Overview of the RAG-Based Chatbot
 
-### Core Features
-1. **✅ Alert System** - Edge device alert ingestion and display
-2. **Vitals Monitoring** - Edge AI-based threshold detection (*Coming*)
-3. **Coma Patient Monitoring** - Movement detection via camera/gyro (*Coming*)
-4. **Post-Discharge AI Assistant** - RAG-based chatbot with symptom tracking (*Coming*)
+![High-Level Overview](https://github.com/semanto-mondal/RAG-Based-Multi-Source-Chatbot-Using-LLM/assets/133217806/80095c2c-a993-4296-b1dc-f802fa1875cf)
 
----
+## Flow Chart of the Chatbot
 
-## 🎯 STEP 1 Deliverables (COMPLETED)
+![Flow Chart](https://github.com/semanto-mondal/RAG-Based-Multi-Source-Chatbot-Using-LLM/assets/133217806/6a18696a-93b8-4bd8-a548-6f3fc5eb1910)
 
-**Status:** ✅ Backend Core & Authentication
+## Navigation Bar of the Chatbot
 
-### ✅ Backend Implementation
-- **Tech Stack:** FastAPI + SQLAlchemy + PostgreSQL
-- **Authentication:** JWT token-based with role checking
-- **Role-Based Access:** Doctor, Nurse, Patient, Admin
-- **Database Schema:** Users, Doctors, Nurses, Patients
-- **API Endpoints:** 16 endpoints across 5 routers
+![Navigation Bar](https://github.com/semanto-mondal/RAG-Based-Multi-Source-Chatbot-Using-LLM/assets/133217806/20301ec9-9498-4de0-be3a-b7eb3e493c23)
 
-### 📂 Folder Structure
-```
-Med-chatbot/
-├── backend/              # Central Server (FastAPI)
-│   ├── app/
-│   │   ├── models/      # Database models
-│   │   ├── schemas/     # Pydantic schemas
-│   │   ├── routers/     # API endpoints
-│   │   ├── utils/       # Security & dependencies
-│   │   ├── config.py
-│   │   ├── database.py
-│   │   └── main.py
-│   └── requirements.txt
-├── frontend/            # React Web Application
-│   ├── src/
-│   │   ├── components/  # Reusable components
-│   │   ├── context/     # Auth context
-│   │   ├── pages/       # Dashboard pages
-│   │   ├── services/    # API client
-│   │   ├── utils/       # Route protection
-│   │   └── App.jsx
-│   └── package.json
-├── edge_devices/        # Edge device simulators
-│   └── send_alert.py    # Alert simulator script
-├── docs/
-│   ├── setup_guide.md   # Installation instructions
-│   ├── api_contracts.md # API documentation
-│   ├── STEP2_TESTING_GUIDE.md  # Testing instructions
-│   └── STEP2_SUMMARY.md # STEP 2 completion report
-├── dev_memory.md        # Development decisions log
-└── README.md
-```
-
-### 🔌 API Endpoints
-
-#### Authentication
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login and receive JWT
-- `GET /api/auth/me` - Get current user info
-
-#### Alert System (NEW in STEP 2)
-- `POST /api/alerts` - Edge device alert ingestion (API Key auth)
-- `GET /api/alerts` - Get user's alerts with role-based filtering
-- `POST /api/alerts/{id}/acknowledge` - Acknowledge an alert
-
-#### Doctor Routes
-- `GET /api/doctor/patients` - Get assigned patients
-- `GET /api/doctor/patients/{id}` - Get patient details
-
-#### Nurse Routes
-- `GET /api/nurse/patients` - Get ward patients
-
-#### Patient Routes
-- `GET /api/patient/profile` - Get own profile
-- `GET /api/patient/chat` - Get chat history (placeholder)
-- `POST /api/patient/chat` - Send message (placeholder)
-
-#### Admin Routes
-- `POST /api/admin/users` - Create user
-- `GET /api/admin/users` - List all users
-- `POST /api/admin/patients` - Register patient
-- `POST /api/admin/doctors/{user_id}` - Create doctor profile
-- `POST /api/admin/nurses/{user_id}` - Create nurse profile
-
----
-
-## 🎯 STEP 2 Deliverables (COMPLETED)
-
-**Status:** ✅ Alert Ingestion & Display
-
-### Backend Features
-- **Alert Model:** Database table with enums (AlertType, AlertSeverity, AlertSource, AlertStatus)
-- **Alert API:** 3 endpoints for create, retrieve, acknowledge
-- **Edge Device Auth:** API key authentication via X-API-Key header
-- **Role-Based Filtering:** Doctors see assigned patients, nurses see ward patients
-
-### Frontend Features
-- **Login Page:** Authentication with role-based navigation
-- **Doctor Dashboard:** Alerts panel + patient list with tabs
-- **Nurse Dashboard:** Alerts panel + ward patient list with tabs
-- **AlertsPanel Component:** Real-time polling (5 sec), filtering, acknowledge functionality
-- **Severity Styling:** Color-coded alerts (red/yellow/green)
-- **Protected Routes:** Role-based access control
-
-### Edge Device Tools
-- **send_alert.py:** Interactive alert simulator with 5 options
-- Supports all alert types (Vitals, Coma, Chatbot)
-- Health check on startup
-
-### Documentation
-- **STEP2_TESTING_GUIDE.md:** 10+ test scenarios with validation steps
-- **STEP2_SUMMARY.md:** Complete technical documentation
-
-**Files Created:** 26 new files, 5 modified files
-
----
-
-## 🛠️ Setup Instructions
+## How to Run the Code
 
 ### Prerequisites
-- Python 3.9+
-- PostgreSQL 13+
-- Node.js 18+ (for frontend)
 
-### Backend Setup
+1. **Python 3.8+**: Ensure that Python is installed on your system.
+2. **pip**: Package installer for Python.
 
-```bash
-# 1. Install PostgreSQL and create database
-psql -U postgres
-CREATE DATABASE med_chatbot;
-\q
+### Installation
 
-# 2. Setup backend
-cd backend
-python -m venv venv
-venv\Scripts\activate  # Windows
-pip install -r requirements.txt
+1. **Clone the Repository:**
 
-# 3. Configure environment
-cp .env.example .env
-# Edit .env with your database credentials and API key
+    ```sh
+    git clone https://github.com/RajdeepDas43/RAG-Based-Multi-Source-Chatbot-Using-LLM.git
+    cd RAG-Based-Multi-Source-Chatbot-Using-LLM
+    ```
 
-# 4. Run the server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
+2. **Install Dependencies:**
 
-### Frontend Setup
+    ```sh
+    pip install -r requirements.txt
+    ```
 
-```bash
-# 1. Install dependencies
-cd frontend
-npm install
+### Running the Chatbot
 
-# 2. Start development server
-npm start
-```
+1. **Start the Streamlit Application:**
 
-### Edge Device Simulator
+    ```sh
+    streamlit run chatbot_streamlit_combined.py
+    ```
 
-```bash
-# Run alert simulator
-cd edge_devices
-python send_alert.py
-```
+2. **Upload Documents:**
 
-### Access Applications
-- **Backend API:** http://localhost:8000/docs
-- **Frontend App:** http://localhost:3000
-- **Health Check:** http://localhost:8000/health
+    - Navigate to the document embedding interface in the Streamlit app.
+    - Upload the required PDF or text files as the external knowledge base.
 
----
+3. **Interact with the Chatbot:**
 
-## 📚 Documentation
+    - Go to the chatbot interface.
+    - Ask questions and get responses that reference the uploaded documents.
 
-- **[Setup Guide](docs/setup_guide.md)** - Detailed installation steps
-- **[API Contracts](docs/api_contracts.md)** - Complete API documentation
-- **[STEP 2 Testing Guide](docs/STEP2_TESTING_GUIDE.md)** - Test scenarios and validation
-- **[STEP 2 Summary](docs/STEP2_SUMMARY.md)** - Technical implementation details
-- **[Dev Memory](dev_memory.md)** - Project decisions and progress log
+### Development Container (Optional)
 
----
+For a consistent development environment, you can use the provided devcontainer configuration. This setup uses Visual Studio Code's Remote - Containers extension.
 
-## 🔐 Database Schema
+1. **Install Visual Studio Code and the Remote - Containers extension.**
 
-### Users Table
-Base table for all user roles with email, password, role, and profile info.
+2. **Open the Project in a Dev Container:**
 
-### Doctors Table
-Specialization, license number, department. Links to Users table.
+    - Open the project in Visual Studio Code.
+    - Press `F1` and select `Remote-Containers: Reopen in Container`.
+  
+# Evaluation Pipeline for RAG
+## Overview
+The evaluation pipeline for the Retrieval-Augmented Generation (RAG) model assesses its performance in providing accurate and contextually relevant responses based on both internal knowledge (from the trained model) and external knowledge (from provided documents). This process involves several steps:
 
-### Nurses Table
-Ward assignment, shift info. Links to Users table.
+![1_AjzZmZaW00iBfy-mij4Asw](https://github.com/RajdeepDas43/RAG-Powered-LLM-Chatbot/assets/120500013/a4b7df3e-86ed-47cd-a7ce-94a9c4d36f58)
 
-### Patients Table
-Patient number, DOB, admission/discharge dates, assigned doctor, ward, bed number.
+1. Step 1: Data Preparation
+Document Collection: Gather a set of documents that will serve as the external knowledge base. These can be in various formats such as PDF, text files, etc.
+Query Collection: Prepare a set of queries or questions that the chatbot will respond to. These should be relevant to the content in the documents.
+2. Step 2: Embedding and Indexing
+Document Embedding: Convert the documents into vector embeddings using a pre-trained model. This allows the system to perform similarity searches.
+Indexing: Store the document embeddings in a vector database, such as FAISS, to enable efficient retrieval.
+3. Step 3: Retrieval
+Query Embedding: Convert the user queries into vector embeddings.
+Similarity Search: Perform a similarity search in the vector database to retrieve the most relevant document chunks based on the query embeddings.
+4. Step 4: Generation
+Prompt Creation: Combine the retrieved document chunks with the user query to create a prompt.
+Response Generation: Use the LLM to generate a response based on the combined prompt. The LLM leverages both its internal knowledge and the retrieved document chunks to provide a more accurate and contextually relevant answer.
+5. Step 5: Evaluation Metrics
+Accuracy: Measure how accurately the responses answer the user queries.
+Relevance: Assess the relevance of the responses to the user queries.
+Fluency: Evaluate the fluency and coherence of the generated responses.
+User Satisfaction: Gather feedback from users to assess their satisfaction with the chatbot’s responses.
+6. Step 6: Iterative Improvement
+Error Analysis: Analyze the errors or shortcomings in the responses to identify areas for improvement.
+Model Tuning: Adjust the model parameters, retrain the model, or update the document embeddings and indexing process as needed.
+Re-evaluation: Re-run the evaluation pipeline to assess the improvements and ensure the model is performing optimally.
 
-### Alerts Table (NEW in STEP 2)
-Alert type, message, severity, source, status, acknowledged_by, timestamps. Links to Patients and Users.
-- Chat History (AI assistant)
-- Daily Check-ins (symptom tracking)
+## How the Dataset was Constructed
+The dataset for the RAG-based chatbot was constructed by collecting a diverse set of documents relevant to the expected queries. These documents included technical manuals, academic papers, and relevant web content. Each document was processed and converted into a suitable format (PDF or text) for embedding. Additionally, a set of representative queries was created to cover a broad spectrum of potential user questions, ensuring that the chatbot could be thoroughly evaluated across various topics.
 
----
+## Choice of Evaluation Metrics
+The evaluation metrics were chosen to comprehensively assess different aspects of the chatbot's performance:
 
-## 🧪 Testing
+- Accuracy: To measure the correctness of the responses in answering the user queries.
+- Relevance: To ensure that the responses are pertinent to the questions asked.
+- Fluency: To evaluate the naturalness and coherence of the language used in the responses.
+- User Satisfaction: To gathersubjective feedback from users on their experience with the chatbot.
+These metrics were selected to provide a balanced evaluation of both the technical performance and user experience, ensuring that the chatbot is not only accurate but also engaging and user-friendly.
 
-### Create Admin User
-```bash
-curl -X POST http://localhost:8000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "admin@hospital.com",
-    "password": "admin123",
-    "full_name": "System Admin",
-    "role": "admin"
-  }'
-```
+## Efforts to Improve Accuracy
+Several strategies were employed to improve the accuracy of the RAG-based chatbot:
 
-### Login
-```bash
-curl -X POST http://localhost:8000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "admin@hospital.com",
-    "password": "admin123"
-  }'
-```
+Data Augmentation: Increasing the diversity and quantity of documents in the knowledge base to provide a richer context for the chatbot.
+Model Fine-Tuning: Fine-tuning the underlying language model with additional domain-specific data to improve its understanding and generation capabilities.
+Optimization of Retrieval Mechanism: Enhancing the retrieval mechanism by experimenting with different embedding techniques and similarity measures to improve the relevance of retrieved document chunks.
+Iterative Testing and Feedback: Conducting iterative testing and incorporating user feedback to continually refine and improve the chatbot’s performance.
+These efforts were aimed at ensuring that the chatbot provides accurate, relevant, and contextually appropriate responses, enhancing its overall utility and effectiveness.
 
-Use the returned `access_token` in subsequent requests:
-```
-Authorization: Bearer <your_token>
-```
+## Conclusion
+The evaluation pipeline for a RAG-based chatbot is crucial to ensure that the model provides accurate, relevant, and contextually appropriate responses. By leveraging both internal and external knowledge sources, the RAG model can significantly enhance the capabilities of traditional chatbots, making them more effective in a wide range of applications.
 
----
-
-## 📅 Development Roadmap
-
-- [x] **STEP 1:** Core backend, authentication, role-based access
-- [ ] **STEP 2:** Vitals monitoring edge device + backend integration
-- [ ] **STEP 3:** Coma monitoring edge device
-- [ ] **STEP 4:** RAG chatbot backend
-- [ ] **STEP 5:** Alert aggregation system
-- [ ] **STEP 6:** React frontend with role-based dashboards
-- [ ] **STEP 7:** Real-time updates (WebSocket)
-- [ ] **STEP 8:** Integration testing
-
----
-
-## 🎓 Key Design Decisions
-
-### Why FastAPI?
-- Fast, async support
-- Auto-generated API docs
-- Strong typing with Pydantic
-- Perfect for microservice communication
-
-### Why JWT?
-- Stateless authentication
-- Works across distributed edge devices
-- Easy to validate on each service
-
-### Why PostgreSQL?
-- ACID compliance for medical records
-- Relational integrity
-- JSONB for flexible data (chat, questionnaires)
-
-### Why Separate Edge Devices?
-- Privacy: Process video/vitals locally
-- Efficiency: Only send alerts, not raw data
-- Scalability: Add more edge devices easily
-- Realistic hospital architecture
-
----
-
-## ⚠️ Important Notes
-
-- **Not for Production:** This is a hackathon demo
-- **Dummy Data Only:** No real patient information
-- **Security:** Change SECRET_KEY in production
-- **Network:** All devices must be on same LAN
-- **Database:** Backup before schema changes
-
----
-
-## 📞 Next Steps
-
-**Awaiting confirmation to proceed with:**
-1. React frontend skeleton
-2. Role-based dashboard routing
-3. Login page and authentication flow
-
-Once approved, we'll move to **STEP 2: Vitals Monitoring Edge Device**.
-
----
-
-## 📄 License
-
-Hackathon Project - Educational Use Only

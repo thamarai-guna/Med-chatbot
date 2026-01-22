@@ -125,5 +125,5 @@ Iterative Testing and Feedback: Conducting iterative testing and incorporating u
 These efforts were aimed at ensuring that the chatbot provides accurate, relevant, and contextually appropriate responses, enhancing its overall utility and effectiveness.
 
 ## Conclusion
-The evaluation pipeline for a RAG-based chatbot is crucial to ensure that the model provides accurate, relevant, and contextually appropriate responses. By leveraging both internal and external knowledge sources, the RAG model can significantly enhance the capabilities of traditional chatbots, making them more effective in a wide range of applications.
+The evaluation pipeline for a RAG-based chatbot is crucial to ensure that the model provides accurate, relevant, and contextually appropriate responses. By leveraging both internal and external knowledge sources, the RAG model can significantly enhance the capabilities of traditional chatbots, making them more effective in a wide range of applications..
 

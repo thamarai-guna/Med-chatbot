@@ -1,6 +1,11 @@
 /**
  * Patient Dashboard
  * Main interface for patients to interact with AI chatbot
+ * 
+ * MANDATORY FLOW:
+ * 1. Check medical report status
+ * 2. If no report → Show upload component (BLOCKING)
+ * 3. If report exists → Show chat interface (ENABLED)
  */
 
 import React, { useState, useEffect } from 'react';
@@ -9,16 +14,20 @@ import { useTheme } from '../context/ThemeContext';
 import ThemeToggle from '../components/ThemeToggle';
 import ChatBox from '../components/ChatBox';
 import RiskBadge from '../components/RiskBadge';
+import ReportUploadComponent from '../components/ReportUploadComponent';
 import { getPatient, getRiskSummary } from '../api/api';
+import axios from 'axios';
 
 const PatientDashboard = () => {
   const [patientData, setPatientData] = useState(null);
   const [riskSummary, setRiskSummary] = useState(null);
+  const [reportStatus, setReportStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const { theme } = useTheme();
 
   const patientId = localStorage.getItem('patientId');
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
   useEffect(() => {
     // Check if logged in
@@ -33,17 +42,31 @@ const PatientDashboard = () => {
 
   const loadPatientData = async () => {
     try {
-      const [patient, risk] = await Promise.all([
-        getPatient(patientId),
-        getRiskSummary(patientId),
-      ]);
+      // Load patient data
+      const patient = await getPatient(patientId);
       setPatientData(patient);
-      setRiskSummary(risk);
+
+      // Check medical report status (CRITICAL GATE)
+      const statusResponse = await axios.get(
+        `${API_BASE_URL}/api/patient/${patientId}/report/status`
+      );
+      setReportStatus(statusResponse.data);
+
+      // Load risk summary only if report exists
+      if (statusResponse.data.has_medical_report) {
+        const risk = await getRiskSummary(patientId);
+        setRiskSummary(risk);
+      }
     } catch (err) {
       console.error('Failed to load patient data:', err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleReportUploaded = () => {
+    // Refresh status and data after report upload
+    loadPatientData();
   };
 
   const handleLogout = () => {
@@ -257,6 +280,32 @@ const PatientDashboard = () => {
           If you are experiencing a medical emergency, please call emergency services immediately.
         </div>
 
+        {/* Medical Report Upload - MANDATORY GATE BEFORE CHATTING */}
+        <ReportUploadComponent 
+          patientId={patientId} 
+          onReportUploaded={handleReportUploaded}
+        />
+
+        {/* Risk Status - Only show if report exists */}
+        {reportStatus?.has_medical_report && (
+          <>
+            <div style={cardStyle}>
+              <h2 style={{ marginTop: 0, marginBottom: '16px' }}>Current Risk Status</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <RiskBadge level={riskSummary?.max_risk_level || 'LOW'} size="large" />
+                <div>
+                  <div style={{ fontSize: '14px', color: '#6c757d' }}>
+                    Based on {riskSummary?.total_queries || 0} recent conversations
+                  </div>
+                  {riskSummary?.risk_distribution && (
+                    <div style={{ fontSize: '12px', color: '#6c757d', marginTop: '4px' }}>
+                      Distribution: 
+                      {Object.entries(riskSummary.risk_distribution).map(([level, count]) => (
+                        count > 0 && <span key={level} style={{ marginLeft: '8px' }}>{level}: {count}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
         {/* Risk Status */}
         <div style={sectionStyle}>
           <div style={sectionTitleStyle}>Current Health Status</div>
@@ -285,9 +334,14 @@ const PatientDashboard = () => {
                 )}
               </div>
             </div>
-          </div>
-        </div>
 
+            {/* Chat Interface */}
+            <div style={cardStyle}>
+              <h2 style={{ marginTop: 0, marginBottom: '16px' }}>Chat with AI Medical Assistant</h2>
+              <ChatBox patientId={patientId} />
+            </div>
+          </>
+        )}
         {/* Chat Interface */}
         <div style={sectionStyle}>
           <div style={sectionTitleStyle}>Chat with AI Assistant</div>

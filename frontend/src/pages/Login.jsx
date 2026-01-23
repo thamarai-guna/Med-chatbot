@@ -1,57 +1,66 @@
 /**
  * Login Page
- * Simple role selection for demo purposes
+ * Username and password authentication
  */
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAllPatients } from '../api/api';
 
 const Login = () => {
-  const [role, setRole] = useState('');
-  const [patientId, setPatientId] = useState('');
-  const [patients, setPatients] = useState([]);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
 
-  // Load patients when patient role is selected
-  const handleRoleChange = async (selectedRole) => {
-    setRole(selectedRole);
+  const handleLogin = async () => {
+    if (!username.trim() || !password.trim()) {
+      setError('Please enter both username and password');
+      return;
+    }
+
+    setLoading(true);
     setError(null);
 
-    if (selectedRole === 'patient') {
-      setLoading(true);
-      try {
-        const data = await getAllPatients();
-        setPatients(data.patients || []);
-      } catch (err) {
-        setError('Failed to load patients: ' + err.message);
-      } finally {
-        setLoading(false);
+    try {
+      const response = await fetch('http://localhost:8000/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: username.trim(),
+          password: password.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Login failed');
       }
-    }
-  };
 
-  const handleLogin = () => {
-    if (!role) {
-      setError('Please select a role');
-      return;
-    }
+      const data = await response.json();
 
-    if (role === 'patient' && !patientId) {
-      setError('Please select a patient');
-      return;
-    }
+      // Store authentication data
+      localStorage.setItem('userRole', data.role);
+      localStorage.setItem('userId', data.user_id);
+      if (data.role === 'patient') {
+        localStorage.setItem('patientId', data.user_id);
+      }
 
-    // Store in localStorage for demo
-    localStorage.setItem('userRole', role);
-    if (role === 'patient') {
-      localStorage.setItem('patientId', patientId);
+      // Redirect based on role
+      if (data.role === 'patient') {
+        navigate('/patient');
+      } else if (data.role === 'doctor') {
+        navigate('/doctor');
+      } else if (data.role === 'nurse') {
+        navigate('/nurse');
+      }
+    } catch (err) {
+      setError(err.message || 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
-
-    // Navigate based on role
-    navigate(role === 'patient' ? '/patient' : '/doctor');
   };
 
   const containerStyle = {
@@ -91,13 +100,14 @@ const Login = () => {
     fontSize: '14px',
   };
 
-  const selectStyle = {
+  const inputStyle = {
     width: '100%',
     padding: '12px',
     marginBottom: '16px',
     border: '1px solid #ced4da',
     borderRadius: '4px',
     fontSize: '14px',
+    boxSizing: 'border-box',
   };
 
   const buttonStyle = {
@@ -107,9 +117,10 @@ const Login = () => {
     color: 'white',
     border: 'none',
     borderRadius: '4px',
-    cursor: 'pointer',
+    cursor: loading ? 'not-allowed' : 'pointer',
     fontSize: '16px',
     fontWeight: 'bold',
+    opacity: loading ? 0.6 : 1,
   };
 
   const errorStyle = {
@@ -125,51 +136,43 @@ const Login = () => {
     <div style={containerStyle}>
       <div style={cardStyle}>
         <h1 style={titleStyle}>🏥 Medical Chatbot</h1>
-        <p style={subtitleStyle}>AI-Powered Patient Monitoring System</p>
+        <p style={subtitleStyle}>Post-Discharge Neurological Monitoring</p>
 
         {error && <div style={errorStyle}>{error}</div>}
 
-        <label style={labelStyle}>Select Role</label>
-        <select
-          value={role}
-          onChange={(e) => handleRoleChange(e.target.value)}
-          style={selectStyle}
-        >
-          <option value="">-- Choose Role --</option>
-          <option value="patient">Patient</option>
-          <option value="doctor">Doctor</option>
-        </select>
+        <label style={labelStyle}>Username</label>
+        <input
+          type="text"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+          placeholder="Enter your username"
+          style={inputStyle}
+          disabled={loading}
+        />
 
-        {role === 'patient' && (
-          <>
-            <label style={labelStyle}>Select Patient</label>
-            {loading ? (
-              <div style={{ textAlign: 'center', padding: '12px', color: '#6c757d' }}>
-                Loading patients...
-              </div>
-            ) : (
-              <select
-                value={patientId}
-                onChange={(e) => setPatientId(e.target.value)}
-                style={selectStyle}
-              >
-                <option value="">-- Choose Patient --</option>
-                {patients.map((patient) => (
-                  <option key={patient.patient_id} value={patient.patient_id}>
-                    {patient.name} ({patient.patient_id})
-                  </option>
-                ))}
-              </select>
-            )}
-          </>
-        )}
+        <label style={labelStyle}>Password</label>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+          placeholder="Enter your password"
+          style={inputStyle}
+          disabled={loading}
+        />
 
-        <button onClick={handleLogin} style={buttonStyle}>
-          Login
+        <button onClick={handleLogin} disabled={loading} style={buttonStyle}>
+          {loading ? 'Logging in...' : 'Login'}
         </button>
 
         <div style={{ marginTop: '24px', padding: '12px', backgroundColor: '#e7f3ff', borderRadius: '4px', fontSize: '12px' }}>
-          <strong>Demo Mode:</strong> No authentication required. Select a role to continue.
+          <strong>Demo Credentials:</strong>
+          <div style={{ marginTop: '8px' }}>
+            Patient: patient1 / pass123<br/>
+            Doctor: doctor1 / pass123<br/>
+            Nurse: nurse1 / pass123
+          </div>
         </div>
       </div>
     </div>

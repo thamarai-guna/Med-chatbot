@@ -40,6 +40,8 @@ class RAGEngine:
         self.shared_retriever = None
         self.patient_retriever = None
         self.patient_manager = get_patient_manager()
+        self.question_count = 0  # Track questions in current session
+        self.max_questions_per_session = 6  # Enforce maximum (per latest spec)
         
         # Verify patient exists
         patient = self.patient_manager.get_patient(patient_id)
@@ -242,11 +244,13 @@ class RAGEngine:
             
             # Normalize risk_level to uppercase
             risk_level = risk_data.get("risk_level", "UNKNOWN").upper()
-            risk_reason = risk_data.get("risk_reason", "Unable to assess risk")
+            reason = risk_data.get("reason", ["Unable to assess"])
+            action = risk_data.get("action", "Continue monitoring")
             
             return {
                 "risk_level": risk_level,
-                "risk_reason": risk_reason
+                "reason": reason if isinstance(reason, list) else [reason],
+                "action": action
             }
             
         except Exception as e:
@@ -255,106 +259,102 @@ class RAGEngine:
     
     def _get_risk_assessment_system_prompt(self) -> str:
         """
-        System prompt for risk assessment
+        System prompt for neurological risk assessment (post-discharge monitoring)
         """
-        return """You are a medical risk assessment AI for a hospital triage system. Your task is to evaluate medical queries and assign a risk level.
+        return """You are a post-discharge neurological monitoring assistant. Your task is to assess patient risk based on symptom responses.
 
 CRITICAL RULES:
-1. You MUST respond with valid JSON only (no other text)
-2. JSON format: {"risk_level": "LOW|MEDIUM|HIGH|CRITICAL", "risk_reason": "brief explanation"}
-3. risk_reason must be 1-2 sentences maximum
+1. You MUST respond with VALID JSON ONLY (no other text before or after)
+2. JSON format: {"risk_level": "LOW|MEDIUM|HIGH", "reason": ["bullet1", "bullet2"], "action": "action text"}
+3. risk_level: ONLY ONE of LOW, MEDIUM, HIGH (be CONSERVATIVE)
+4. reason: Array of 1-3 bullet points maximum, simple language, NO diagnosis, NO medical jargon
+5. action: Plain text action based on risk level
 
-RISK LEVEL DEFINITIONS:
-- CRITICAL: Life-threatening emergencies requiring immediate intervention (cardiac arrest, severe trauma, stroke symptoms, major bleeding, loss of consciousness, severe breathing difficulty)
-- HIGH: Urgent conditions needing prompt medical attention within hours (chest pain, acute severe symptoms, neurological changes, worsening symptoms over days)
-- MEDIUM: Conditions requiring medical evaluation soon (persistent pain, fever, infections, new symptoms, chronic disease management)
-- LOW: General health information, preventive care, mild symptoms, educational queries
+RISK LEVEL DEFINITIONS (NEUROLOGICAL FOCUS):
+- HIGH: Neurological red flags (confusion, severe headache, sudden weakness, loss of sensation, vision loss, seizure activity, speech difficulties, severe dizziness, worsening symptoms)
+- MEDIUM: Moderate symptoms (persistent headache, mild dizziness, mild numbness, medication questions, functional limitations)
+- LOW: Stable symptoms, no new concerns, following treatment plan, doing well
 
-RISK ESCALATION FACTORS:
-- Symptoms worsening over multiple days → increase risk by 1 level
-- Neurological red flags (confusion, vision changes, numbness, weakness) → HIGH or CRITICAL
-- Cardiovascular symptoms (chest pain, palpitations with other symptoms) → HIGH or CRITICAL
-- Breathing difficulty or severe pain → HIGH minimum
-- Multiple concerning symptoms together → increase risk by 1 level
-- Patient expressing distress or concern about severity → increase risk consideration
+Be CONSERVATIVE: Only use HIGH if symptoms clearly justify urgent attention.
 
-IMPORTANT: Consider the conversation history for progression of symptoms. If symptoms are recurring or worsening across multiple questions, this indicates higher risk."""
+ACTION RULES (STRICT):
+- HIGH: "Visit your doctor or nearest hospital immediately. Contact a family member or caregiver."
+- MEDIUM: "Continue taking your prescribed medicines and monitor symptoms closely. Inform your doctor if symptoms worsen."
+- LOW: "You are doing well. Continue your normal routine and prescribed medications. No immediate action needed."
+
+IMPORTANT: Consider conversation history for symptom progression. Worsening trends increase risk level."""
 
     def _create_risk_assessment_prompt(self, question: str, answer: str, context: str, history: str) -> str:
         """
-        User prompt for risk assessment with all context
+        User prompt for neurological risk assessment with all context
         """
-        prompt = f"""Assess the medical risk level for this patient interaction.
+        prompt = f"""Assess the neurological risk level for this patient post-discharge monitoring session.
 
-PATIENT QUESTION:
+PATIENT'S SYMPTOM RESPONSE:
 {question}
 
-MEDICAL ANSWER PROVIDED:
+PATIENT'S ANSWER/SYMPTOMS:
 {answer}
 
-RELEVANT MEDICAL CONTEXT FROM DOCUMENTS:
+RELEVANT MEDICAL CONTEXT FROM NEUROLOGY DOCUMENTS:
 {context[:800]}"""
 
         if history:
             prompt += f"""
 
-CONVERSATION HISTORY (for symptom progression analysis):
+CONVERSATION HISTORY (check for symptom progression):
 {history}"""
 
         prompt += """
 
-Analyze the above information and respond with JSON only:
+Analyze and respond with VALID JSON ONLY (no other text):
 {
-  "risk_level": "LOW|MEDIUM|HIGH|CRITICAL",
-  "risk_reason": "Brief explanation (1-2 sentences max)"
-}"""
+  "risk_level": "LOW|MEDIUM|HIGH",
+  "reason": ["symptom description", "severity assessment", "trend if worsening"],
+  "action": "specific action for patient"
+}
+
+Remember: Be CONSERVATIVE. Use HIGH only if clearly justified."""
 
         return prompt
     
     def _fallback_risk_assessment(self, question: str, answer: str, context: str) -> Dict[str, str]:
         """
-        Fallback keyword-based risk assessment if LLM fails
+        Fallback keyword-based risk assessment if LLM fails (neurological focus)
         """
         combined_text = (question + " " + answer + " " + context).lower()
         
-        critical_keywords = [
-            "cardiac arrest", "not breathing", "unconscious", "unresponsive",
-            "severe bleeding", "major trauma", "stroke symptoms"
-        ]
-        
         high_risk_keywords = [
-            "chest pain", "stroke", "heart attack", "severe", "breathing difficulty",
-            "confusion", "vision loss", "numbness", "weakness", "suicide"
+            "seizure", "confusion", "lost consciousness", "sudden weakness",
+            "vision loss", "numbness", "severe headache", "speech difficulty",
+            "severe dizziness", "can't walk", "paralysis", "stroke", "bleeding"
         ]
         
         medium_risk_keywords = [
-            "pain", "fever", "infection", "persistent", "worsening", "chronic"
+            "headache", "mild dizziness", "numbness", "weakness",
+            "persistent", "worsening", "medication", "dizzy"
         ]
-        
-        for keyword in critical_keywords:
-            if keyword in combined_text:
-                return {
-                    "risk_level": "CRITICAL",
-                    "risk_reason": f"Life-threatening condition detected. Immediate medical attention required."
-                }
         
         for keyword in high_risk_keywords:
             if keyword in combined_text:
                 return {
                     "risk_level": "HIGH",
-                    "risk_reason": f"Urgent medical attention may be needed within hours."
+                    "reason": ["Neurological symptoms detected", "Requires urgent medical attention"],
+                    "action": "Visit your doctor or nearest hospital immediately. Contact a family member or caregiver."
                 }
         
         for keyword in medium_risk_keywords:
             if keyword in combined_text:
                 return {
                     "risk_level": "MEDIUM",
-                    "risk_reason": "Medical evaluation recommended soon."
+                    "reason": ["Moderate neurological symptoms present", "Monitoring recommended"],
+                    "action": "Continue taking your prescribed medicines and monitor symptoms closely. Inform your doctor if symptoms worsen."
                 }
         
         return {
             "risk_level": "LOW",
-            "risk_reason": "General medical information query with no immediate concerns."
+            "reason": ["Stable condition", "No acute symptoms reported"],
+            "action": "You are doing well. Continue your normal routine and prescribed medications."
         }
     
     def answer_question(self, question: str, context_docs: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -403,6 +403,19 @@ Analyze the above information and respond with JSON only:
                 source_documents = context_docs
                 context = "\n\n".join(context_docs[:6])
             
+            # Pre-upload guard: if no patient-specific vector store, require upload
+            if self.patient_retriever is None:
+                upload_msg = "To begin today’s check-in, please upload your medical reports using the **Upload Medical Reports** section above."
+                return {
+                    "answer": upload_msg,
+                    "risk_level": "PENDING",
+                    "risk_reason": upload_msg,
+                    "reason": [upload_msg],
+                    "action": upload_msg,
+                    "source_documents": [],
+                    "question_count": self.question_count
+                }
+
             # Build chat history context
             history_context = ""
             if self.chat_history:
@@ -413,119 +426,158 @@ Analyze the above information and respond with JSON only:
                 history_context = f"\n\nPrevious conversation:\n{history_context}\n\n"
             
             # Create prompt for Groq with combined context
-            prompt = f"""You are an AI chatbot designed to monitor patients with brain-related conditions after hospital discharge.
+            prompt = f"""You are an AI assistant for post-discharge neurological patient monitoring.
 
-CONTEXT:
-- Brain-related medical books and guidelines have already been uploaded.
-- These documents are stored in a vector database.
-- You must use Retrieval-Augmented Generation (RAG) to retrieve information from these books whenever medical reasoning is required.
-- Do not use any medical knowledge outside the retrieved content.
+You are NOT a general chatbot. You operate ONLY within a controlled hospital monitoring flow.
 
-PATIENT DATA:
-- Patient medical reports will be provided after the books are uploaded.
-- Use the patient reports only to understand the condition, symptoms, medications, and risk factors.
-- Do not treat patient reports as medical knowledge.
+MANDATORY FLOW (STRICT):
+1) User login (already completed)
+2) Patient identity established
+3) Patient medical reports uploaded
+4) Report processing completed
+5) Questioning begins
+6) Risk assessment generated
 
-YOUR TASK:
-- Ask simple and clear questions to the patient based on their reports.
-- Use only simple language and ask ONE question at a time.
-- Prefer Yes/No or short answers.
-- Adapt follow-up questions based on patient responses.
-- Focus only on brain-related symptoms.
+PRE-CONDITION:
+- If patient medical reports are NOT uploaded or processed, do NOT ask questions. Instead say: "Please upload your medical reports to continue with today’s check-in."
 
-CRITICAL INSTRUCTION: 
-🚨 ASK ONLY **ONE QUESTION** PER RESPONSE 🚨
-- Do NOT list multiple questions
-- Do NOT ask "question 1, question 2, question 3"
-- Ask one question, wait for the patient's answer, then ask the next question in the next interaction
+DOCUMENT SOURCES:
+- SOURCE A (Shared books): Neurology clinical books/guidelines in vector DB. Use ONLY for medical reasoning via RAG.
+- SOURCE B (Patient reports): Private PDFs/images/text for condition/symptoms/meds/risk factors. NOT medical knowledge; do NOT use for medical reasoning.
 
-QUESTION AREAS:
-- Speech or confusion
-- Headache or pain
-- Dizziness or balance
-- Weakness or numbness
-- Vision problems
-- Seizure activity (if mentioned)
-- Medication intake
-- Daily functioning
+YOUR ROLE:
+1) Ask DAILY symptom questions after reports are uploaded
+2) Adapt questions using patient report context + previous answers + retrieved guidance
+3) Assess patient risk (LOW/MEDIUM/HIGH)
+4) Provide safe next-step actions
 
-ASSESSMENT:
-- Combine patient responses, patient reports, and retrieved medical guidance.
-- Analyze symptom severity, duration, and combinations.
-- Classify the patient into one risk level: Low, Medium, or High.
+QUESTION RULES (STRICT):
+- Ask ONE question at a time (exactly one line)
+- Simple, patient-friendly language
+- Focus ONLY on brain-related symptoms
+- Areas: Speech/confusion, Headache/pain, Dizziness/balance, Weakness/numbness, Vision, Seizures (if mentioned), Medications, Daily functioning
+- Allowed answer types: YES/NO OR numeric (0-10) OR short text (10-15 words; only for pain location or new symptoms)
+- Question number: {self.question_count + 1}/{self.max_questions_per_session}
+- Limits: MIN 3, MAX 6 questions. Never exceed max. End early if stable.
 
-FINAL RESPONSE FORMAT (AFTER GATHERING INFORMATION):
+FOLLOW-UP RULES:
+- Only if patient answers YES or symptom worsens
+- Only ONE follow-up per symptom
+- Follow-ups obey all rules above
 
-1. Risk Level:
-   - Low / Medium / High
+ASSESSMENT LOGIC:
+- Combine: patient answers + patient report context + retrieved neurology guidance
+- Analyze severity, trends, combinations
 
-2. Reason:
-   - Explain the risk level using simple bullet points.
-   - Base the explanation on patient responses and retrieved guidance.
+FINAL RESPONSE FORMAT (STRICT JSON when ready):
+{{
+    "risk_level": "LOW|MEDIUM|HIGH",
+    "reason": ["bullet1", "bullet2"],
+    "action": "specific action text"
+}}
 
-3. Actions (STRICT RULES):
+REASON RULES:
+- 1-3 bullets, simple language, no diagnosis, no jargon, no sources
 
-   - If Risk Level is HIGH:
-     Tell the patient to visit their doctor or the nearest hospital immediately.
-     Encourage contacting a caregiver or family member.
-     Do NOT give medication advice.
-
-   - If Risk Level is MEDIUM:
-     Advise the patient to continue taking the medicines prescribed by the doctor.
-     Reinforce following the doctor's instructions.
-     Encourage rest and monitoring.
-     Do NOT suggest new medicines or dosage changes.
-
-   - If Risk Level is LOW:
-     Reassure the patient using positive and calming words.
-     Tell the patient they are doing well and should not worry.
-     Encourage continuing normal routine and prescribed medication.
+ACTION RULES (STRICT):
+- HIGH: Visit doctor/hospital immediately; contact caregiver. No medication advice.
+- MEDIUM: Continue prescribed medicines; rest and monitor; no new meds or dosage changes.
+- LOW: Reassure; continue normal routine and prescribed meds.
 
 SAFETY RULES:
-- Do not diagnose diseases.
-- Do not change or prescribe medicines.
-- Do not replace a doctor.
-- Always prioritize patient safety.
+- Do NOT diagnose; do NOT prescribe/change meds; do NOT replace a doctor; prioritize safety
 
-TONE:
-- Calm
-- Supportive
-- Clear
-- Patient-friendly
+TONE: Calm, Supportive, Clear, Patient-friendly
 
-{history_context}Context from medical sources (books + patient records):
-{context}
+Retrieved medical context:
+{context[:1000]}
 
-Patient's current message: {question}
+{history_context}
 
-Your response (remember: ask ONE question only, or provide assessment if enough information gathered):"""
+Now ask the next symptom question (ONE line, ONE allowed answer type). If reports are missing, say: "Please upload your medical reports to continue with today’s check-in." If you have enough info (≥3 questions or at max limit), return the JSON assessment instead of another question."""
             
             # Call Groq API
             answer = self._call_groq(prompt)
             
-            # Assess medical risk
-            risk_assessment = self._assess_medical_risk(question, answer, context)
+            # Increment question counter
+            self.question_count += 1
             
-            # Update chat history
-            self.chat_history.append({"question": question, "answer": answer})
-            if len(self.chat_history) > 4:  # Keep last 4 exchanges
-                self.chat_history.pop(0)
+            # Try to parse JSON if assessment is complete
+            risk_assessment = None
+            try:
+                # Check if answer contains JSON (assessment format)
+                if "risk_level" in answer.lower():
+                    import json
+                    # Extract JSON from response
+                    json_start = answer.find('{')
+                    json_end = answer.rfind('}') + 1
+                    if json_start != -1 and json_end > json_start:
+                        json_str = answer[json_start:json_end]
+                        risk_data = json.loads(json_str)
+                        risk_assessment = {
+                            "risk_level": risk_data.get("risk_level", "UNKNOWN").upper(),
+                            "reason": risk_data.get("reason", ["Unable to assess"]),
+                            "action": risk_data.get("action", "Continue monitoring")
+                        }
+                        # Reset question counter for next session
+                        self.question_count = 0
+            except:
+                pass
+            
+            # If no assessment yet, assess based on conversation depth
+            if not risk_assessment and self.question_count >= self.max_questions_per_session:
+                # Force assessment at max questions (6)
+                risk_assessment = self._assess_medical_risk(question, answer, context)
+            elif not risk_assessment and self.question_count >= 3:
+                # Minimum questions reached (3)
+                risk_assessment = self._assess_medical_risk(question, answer, context)
+            elif not risk_assessment:
+                # Still asking questions
+                risk_assessment = {
+                    "risk_level": "PENDING",
+                    "reason": ["Gathering symptom information"],
+                    "action": answer  # Return the question
+                }
             
             # Save to patient database
+            risk_level = risk_assessment.get("risk_level", "UNKNOWN")
+            # Convert reason array to string for database storage
+            reason_list = risk_assessment.get("reason", [])
+            if isinstance(reason_list, list) and reason_list:
+                risk_reason = reason_list[0]  # Use first bullet point
+            else:
+                risk_reason = str(risk_assessment.get("action", ""))
+
+            # Enforce pre-condition: if no patient records, return upload message and skip logging
+            if self.patient_retriever is None:
+                upload_msg = "Please upload your medical reports to continue with today’s check-in."
+                return {
+                    "answer": upload_msg,
+                    "risk_level": "PENDING",
+                    "risk_reason": upload_msg,
+                    "reason": [upload_msg],
+                    "action": upload_msg,
+                    "source_documents": [],
+                    "question_count": self.question_count
+                }
+
             self.patient_manager.save_chat_message(
                 patient_id=self.patient_id,
                 question=question,
                 answer=answer,
-                risk_level=risk_assessment["risk_level"],
-                risk_reason=risk_assessment["risk_reason"],
+                risk_level=risk_level,
+                risk_reason=risk_reason,
                 source_documents=source_documents
             )
             
             return {
                 "answer": answer,
-                "risk_level": risk_assessment["risk_level"],
-                "risk_reason": risk_assessment["risk_reason"],
-                "source_documents": source_documents
+                "risk_level": risk_level,
+                "risk_reason": risk_reason,  # Convert back to string for API compatibility
+                "reason": risk_assessment.get("reason", []),  # Include array for reference
+                "action": risk_assessment.get("action", ""),
+                "source_documents": source_documents,
+                "question_count": self.question_count
             }
             
         except Exception as e:

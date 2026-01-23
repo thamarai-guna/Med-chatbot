@@ -107,9 +107,70 @@ class DailyQuestionRequest(BaseModel):
     answer: str
     question_metadata: Optional[Dict[str, Any]] = None
 
+class LoginRequest(BaseModel):
+    """Login request"""
+    username: str
+    password: str
+
+class LoginResponse(BaseModel):
+    """Login response"""
+    success: bool
+    user_id: str
+    role: str
+    message: str
+
 # ============================================================================
-# HEALTH CHECK ENDPOINT
+# AUTHENTICATION ENDPOINTS
 # ============================================================================
+
+# Demo users database (in production, use proper authentication)
+DEMO_USERS = {
+    "patient1": {"password": "pass123", "role": "patient", "user_id": "P001"},
+    "patient2": {"password": "pass123", "role": "patient", "user_id": "P002"},
+    "doctor1": {"password": "pass123", "role": "doctor", "user_id": "D001"},
+    "doctor2": {"password": "pass123", "role": "doctor", "user_id": "D002"},
+    "nurse1": {"password": "pass123", "role": "nurse", "user_id": "N001"},
+    "nurse2": {"password": "pass123", "role": "nurse", "user_id": "N002"},
+}
+
+@app.post("/api/auth/login", response_model=LoginResponse)
+async def login(request: LoginRequest):
+    """Authenticate user and return role for dashboard routing"""
+    username = request.username.strip()
+    password = request.password.strip()
+    
+    # Check credentials
+    if username not in DEMO_USERS or DEMO_USERS[username]["password"] != password:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password"
+        )
+    
+    user_info = DEMO_USERS[username]
+    
+    # For patient role, ensure patient exists in database
+    if user_info["role"] == "patient":
+        pm = get_patient_manager()
+        patient = pm.get_patient(user_info["user_id"])
+        if not patient:
+            # Create patient if doesn't exist
+            try:
+                pm.register_patient(
+                    patient_id=user_info["user_id"],
+                    name=f"Patient {username}",
+                    email=f"{username}@hospital.local",
+                    age=None,
+                    medical_history="Default medical history"
+                )
+            except:
+                pass
+    
+    return LoginResponse(
+        success=True,
+        user_id=user_info["user_id"],
+        role=user_info["role"],
+        message=f"Login successful. Welcome {username}!"
+    )
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():

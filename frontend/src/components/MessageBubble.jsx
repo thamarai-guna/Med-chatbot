@@ -45,18 +45,6 @@ const MessageBubble = ({ message, isUser }) => {
             )}
           </div>
         )}
-        {message.source_documents && message.source_documents.length > 0 && (
-          <details style={{ marginTop: '8px', fontSize: '12px' }}>
-            <summary style={{ cursor: 'pointer' }}>Sources ({message.source_documents.length})</summary>
-            <div style={{ marginTop: '4px', opacity: 0.8 }}>
-              {message.source_documents.slice(0, 2).map((doc, idx) => (
-                <div key={idx} style={{ marginTop: '4px' }}>
-                  {doc.substring(0, 100)}...
-                </div>
-              ))}
-            </div>
-          </details>
-        )}
       </div>
       {message.timestamp && (
         <div style={metaStyle}>

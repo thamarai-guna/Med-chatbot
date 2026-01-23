@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment (DO NOT commit - environment-specific)
+.venv/
+venv/
+env/
+ENV/
+
+# Environment Variables (secrets)
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Database (patient data - keep local or use separate DB)
+*.db
+*.sqlite
+*.sqlite3
+
+# Patient Records (private data - DO NOT commit)
+patient_records/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.bak
+temp/
+
+# DO COMMIT THESE (shared resources):
+# - vector store/shared/     # Shared medical knowledge
+# - Document-pdfs/           # Source medical books
+# - requirements.txt         # Dependencies (version-locked)
+# - .env.example            # Environment template
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/build/
+
+# Frontend environment
+frontend/.env.local
+frontend/.env.production.local

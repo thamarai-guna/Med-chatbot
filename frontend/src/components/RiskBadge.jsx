@@ -1,45 +1,57 @@
 /**
  * RiskBadge Component
- * Displays risk level with appropriate color coding
+ * Displays risk level with color coding and modern styling
  */
 
 import React from 'react';
+import { useTheme } from '../context/ThemeContext';
 
 const RiskBadge = ({ level, size = 'medium' }) => {
-  const getColor = (riskLevel) => {
+  const { theme } = useTheme();
+
+  const getColorScheme = (riskLevel) => {
     switch (riskLevel?.toUpperCase()) {
       case 'LOW':
-        return '#28a745'; // Green
+        return theme.riskLow;
       case 'MEDIUM':
-        return '#ffc107'; // Yellow
+        return theme.riskMedium;
       case 'HIGH':
-        return '#ff6b6b'; // Orange
+        return theme.riskHigh;
       case 'CRITICAL':
-        return '#dc3545'; // Red
+        return theme.riskCritical;
       default:
-        return '#6c757d'; // Gray
+        return {
+          bg: theme.bgTertiary,
+          border: theme.border,
+          text: theme.textSecondary,
+        };
     }
   };
 
-  const getSize = () => {
+  const getSizeConfig = () => {
     switch (size) {
       case 'small':
-        return { padding: '4px 8px', fontSize: '12px' };
+        return { padding: '4px 10px', fontSize: '12px', letterSpacing: '0.5px' };
       case 'large':
-        return { padding: '12px 24px', fontSize: '18px' };
+        return { padding: '10px 20px', fontSize: '16px', letterSpacing: '1px' };
       default:
-        return { padding: '8px 16px', fontSize: '14px' };
+        return { padding: '6px 14px', fontSize: '13px', letterSpacing: '0.5px' };
     }
   };
 
+  const colorScheme = getColorScheme(level);
+  const sizeConfig = getSizeConfig();
+
   const style = {
-    backgroundColor: getColor(level),
-    color: 'white',
-    ...getSize(),
-    borderRadius: '4px',
-    fontWeight: 'bold',
+    backgroundColor: colorScheme.bg,
+    color: colorScheme.text,
+    border: `1.5px solid ${colorScheme.border}`,
+    ...sizeConfig,
+    borderRadius: '6px',
+    fontWeight: '600',
     display: 'inline-block',
     textTransform: 'uppercase',
+    transition: 'all 0.3s',
   };
 
   return <span style={style}>{level || 'UNKNOWN'}</span>;

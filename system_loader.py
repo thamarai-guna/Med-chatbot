@@ -8,6 +8,8 @@ import os
 import sys
 from typing import List
 import falcon
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
 
 
 def load_shared_medical_books(force_rebuild: bool = False) -> bool:
@@ -97,12 +99,13 @@ def load_shared_medical_books(force_rebuild: bool = False) -> bool:
     print("⏳ This may take several minutes depending on document size...")
     
     try:
-        falcon.embedding_storing(
-            split=split_docs,
-            create_new_vs=True,
-            existing_vector_store="",
-            new_vs_name="shared"
+        embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            model_kwargs={"device": "cpu"}
         )
+        db = FAISS.from_documents(split_docs, embeddings)
+        os.makedirs(os.path.dirname(shared_vs_path), exist_ok=True)
+        db.save_local(shared_vs_path)
         print(f"✅ Shared medical books vector store created at {shared_vs_path}")
         print(f"📊 Total chunks embedded: {len(split_docs)}")
         return True

@@ -1,9 +1,10 @@
 /**
  * ChatBox Component
- * Main chat interface with input and message history
+ * Main chat interface with ChatGPT-style layout
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useTheme } from '../context/ThemeContext';
 import MessageBubble from './MessageBubble';
 import { sendChatMessage, getChatHistory } from '../api/api';
 
@@ -13,6 +14,7 @@ const ChatBox = ({ patientId }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const messagesEndRef = useRef(null);
+  const { theme } = useTheme();
 
   // Load chat history on mount
   useEffect(() => {
@@ -24,7 +26,7 @@ const ChatBox = ({ patientId }) => {
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, loading]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -105,84 +107,135 @@ const ChatBox = ({ patientId }) => {
   const containerStyle = {
     display: 'flex',
     flexDirection: 'column',
-    height: '600px',
-    border: '1px solid #dee2e6',
-    borderRadius: '8px',
+    height: '650px',
+    backgroundColor: theme.bgSecondary,
+    borderRadius: '12px',
+    border: `1px solid ${theme.border}`,
     overflow: 'hidden',
+    boxShadow: `0 4px 12px ${theme.shadowMd}`,
+    transition: 'all 0.3s',
   };
 
   const messagesStyle = {
     flex: 1,
     overflowY: 'auto',
-    padding: '16px',
-    backgroundColor: '#ffffff',
+    padding: '24px',
+    backgroundColor: theme.bgSecondary,
     display: 'flex',
     flexDirection: 'column',
+    gap: '4px',
+    transition: 'background-color 0.3s',
   };
 
   const inputContainerStyle = {
-    padding: '16px',
-    backgroundColor: '#f8f9fa',
-    borderTop: '1px solid #dee2e6',
+    padding: '16px 24px 24px 24px',
+    backgroundColor: theme.bgSecondary,
+    borderTop: `1px solid ${theme.border}`,
     display: 'flex',
-    gap: '8px',
+    gap: '12px',
+    alignItems: 'flex-end',
+    transition: 'all 0.3s',
+  };
+
+  const inputWrapperStyle = {
+    flex: 1,
+    display: 'flex',
+    alignItems: 'center',
   };
 
   const inputStyle = {
-    flex: 1,
-    padding: '12px',
-    border: '1px solid #ced4da',
-    borderRadius: '4px',
-    fontSize: '14px',
+    width: '100%',
+    padding: '12px 16px',
+    border: `1px solid ${theme.border}`,
+    borderRadius: '24px',
+    fontSize: '15px',
+    backgroundColor: theme.bg,
+    color: theme.text,
+    outline: 'none',
+    transition: 'all 0.2s',
   };
 
   const buttonStyle = {
-    padding: '12px 24px',
-    backgroundColor: '#007bff',
+    padding: '10px 16px',
+    backgroundColor: loading ? theme.borderLight : theme.accent,
     color: 'white',
     border: 'none',
-    borderRadius: '4px',
+    borderRadius: '6px',
     cursor: loading ? 'not-allowed' : 'pointer',
     fontSize: '14px',
-    fontWeight: 'bold',
-    opacity: loading ? 0.6 : 1,
+    fontWeight: '600',
+    opacity: loading ? 0.7 : 1,
+    transition: 'background-color 0.2s',
+  };
+
+  const emptyStateStyle = {
+    textAlign: 'center',
+    color: theme.textTertiary,
+    marginTop: '40px',
+    fontSize: '15px',
+    transition: 'color 0.3s',
+  };
+
+  const loadingStyle = {
+    textAlign: 'center',
+    color: theme.accent,
+    fontSize: '14px',
+    fontWeight: '500',
+    marginBottom: '8px',
+    transition: 'color 0.3s',
+  };
+
+  const errorStyle = {
+    color: theme.riskCritical.text,
+    padding: '12px 16px',
+    backgroundColor: theme.riskCritical.bg,
+    borderRadius: '8px',
+    marginTop: '12px',
+    fontSize: '14px',
+    border: `1px solid ${theme.riskCritical.border}`,
+    transition: 'all 0.3s',
   };
 
   return (
     <div style={containerStyle}>
       <div style={messagesStyle}>
         {messages.length === 0 && (
-          <div style={{ textAlign: 'center', color: '#6c757d', marginTop: '20px' }}>
-            Start a conversation by typing a message below...
+          <div style={emptyStateStyle}>
+            <div style={{ fontSize: '18px', fontWeight: '500', marginBottom: '8px' }}>
+              👋 Welcome to Your Medical Assistant
+            </div>
+            <div>Type your medical question to get started</div>
           </div>
         )}
         {messages.map((msg, idx) => (
           <MessageBubble key={idx} message={msg} isUser={msg.isUser} />
         ))}
         {loading && (
-          <div style={{ textAlign: 'center', color: '#6c757d' }}>
-            AI is thinking...
+          <div style={loadingStyle}>
+            ✓ AI is thinking...
           </div>
         )}
         {error && (
-          <div style={{ color: '#dc3545', padding: '12px', backgroundColor: '#f8d7da', borderRadius: '4px', marginTop: '8px' }}>
-            Error: {error}
+          <div style={errorStyle}>
+            ⚠️ {error}
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
       <div style={inputContainerStyle}>
-        <input
-          type="text"
-          value={inputMessage}
-          onChange={(e) => setInputMessage(e.target.value)}
-          onKeyPress={handleKeyPress}
-          placeholder="Type your medical question..."
-          style={inputStyle}
-          disabled={loading}
-        />
+        <div style={inputWrapperStyle}>
+          <input
+            type="text"
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder="Type your response here…"
+            style={inputStyle}
+            disabled={loading}
+          />
+        </div>
         <button onClick={handleSend} disabled={loading} style={buttonStyle}>
-          {loading ? 'Sending...' : 'Send'}
+          {loading ? '⏳' : '→'}
         </button>
       </div>
     </div>

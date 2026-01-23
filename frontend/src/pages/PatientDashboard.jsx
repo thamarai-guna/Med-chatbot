@@ -10,6 +10,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from '../context/ThemeContext';
+import ThemeToggle from '../components/ThemeToggle';
 import ChatBox from '../components/ChatBox';
 import RiskBadge from '../components/RiskBadge';
 import ReportUploadComponent from '../components/ReportUploadComponent';
@@ -22,6 +24,7 @@ const PatientDashboard = () => {
   const [reportStatus, setReportStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { theme } = useTheme();
 
   const patientId = localStorage.getItem('patientId');
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -73,77 +76,207 @@ const PatientDashboard = () => {
 
   const containerStyle = {
     minHeight: '100vh',
-    backgroundColor: '#f8f9fa',
+    backgroundColor: theme.bg,
+    display: 'flex',
+    flexDirection: 'column',
+    transition: 'background-color 0.3s',
   };
 
   const headerStyle = {
-    backgroundColor: '#007bff',
-    color: 'white',
-    padding: '20px',
+    backgroundColor: theme.bgSecondary,
+    borderBottom: `1px solid ${theme.border}`,
+    padding: '20px 24px',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    boxShadow: `0 1px 3px ${theme.shadow}`,
+    transition: 'all 0.3s',
+  };
+
+  const headerTitleStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+  };
+
+  const titleStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+  };
+
+  const mainTitleStyle = {
+    margin: 0,
+    fontSize: '22px',
+    fontWeight: '600',
+    color: theme.text,
+    transition: 'color 0.3s',
+  };
+
+  const subtitleStyle = {
+    fontSize: '13px',
+    marginTop: '4px',
+    color: theme.textSecondary,
+    transition: 'color 0.3s',
+  };
+
+  const headerControlsStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  };
+
+  const logoutButtonStyle = {
+    padding: '8px 16px',
+    backgroundColor: theme.bgTertiary,
+    color: theme.text,
+    border: `1px solid ${theme.border}`,
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontWeight: '500',
+    fontSize: '14px',
+    transition: 'all 0.2s',
   };
 
   const contentStyle = {
-    maxWidth: '1200px',
+    flex: 1,
+    maxWidth: '900px',
     margin: '0 auto',
+    width: '100%',
     padding: '24px',
-  };
-
-  const cardStyle = {
-    backgroundColor: 'white',
-    padding: '24px',
-    borderRadius: '8px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    marginBottom: '24px',
-  };
-
-  const buttonStyle = {
-    padding: '10px 20px',
-    backgroundColor: 'white',
-    color: '#007bff',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontWeight: 'bold',
   };
 
   const disclaimerStyle = {
-    backgroundColor: '#fff3cd',
-    border: '1px solid #ffc107',
+    backgroundColor: theme.riskMedium.bg,
+    border: `1px solid ${theme.riskMedium.border}`,
     padding: '16px',
     borderRadius: '8px',
     marginBottom: '24px',
     fontSize: '14px',
+    color: theme.riskMedium.text,
+    lineHeight: '1.5',
+    transition: 'all 0.3s',
+  };
+
+  const sectionStyle = {
+    marginBottom: '24px',
+  };
+
+  const sectionTitleStyle = {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: theme.text,
+    marginBottom: '12px',
+    transition: 'color 0.3s',
+  };
+
+  const riskStatusStyle = {
+    backgroundColor: theme.bgSecondary,
+    padding: '20px',
+    borderRadius: '12px',
+    border: `1px solid ${theme.border}`,
+    boxShadow: `0 2px 8px ${theme.shadow}`,
+    transition: 'all 0.3s',
+  };
+
+  const riskContentStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+  };
+
+  const riskTextStyle = {
+    flex: 1,
+  };
+
+  const riskLabelStyle = {
+    fontSize: '13px',
+    color: theme.textSecondary,
+    marginBottom: '4px',
+    transition: 'color 0.3s',
+  };
+
+  const riskCountStyle = {
+    fontSize: '15px',
+    fontWeight: '500',
+    color: theme.text,
+    transition: 'color 0.3s',
+  };
+
+  const chatContainerStyle = {
+    backgroundColor: theme.bgSecondary,
+    borderRadius: '12px',
+    border: `1px solid ${theme.border}`,
+    overflow: 'hidden',
+    transition: 'all 0.3s',
+  };
+
+  const infoGridStyle = {
+    backgroundColor: theme.bgSecondary,
+    padding: '20px',
+    borderRadius: '12px',
+    border: `1px solid ${theme.border}`,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '16px',
+    transition: 'all 0.3s',
+  };
+
+  const infoCellStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+  };
+
+  const infoLabelStyle = {
+    fontSize: '12px',
+    color: theme.textSecondary,
+    marginBottom: '4px',
+    fontWeight: '500',
+    transition: 'color 0.3s',
+  };
+
+  const infoValueStyle = {
+    fontSize: '15px',
+    fontWeight: '600',
+    color: theme.text,
+    transition: 'color 0.3s',
   };
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        Loading...
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: theme.bg, transition: 'background-color 0.3s' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: '500', marginBottom: '12px', color: theme.text }}>Loading your dashboard...</div>
+        </div>
       </div>
     );
   }
 
   return (
     <div style={containerStyle}>
+      {/* Header */}
       <div style={headerStyle}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '24px' }}>Patient Dashboard</h1>
-          <div style={{ fontSize: '14px', marginTop: '4px', opacity: 0.9 }}>
-            {patientData?.name} (ID: {patientId})
+        <div style={headerTitleStyle}>
+          <div>
+            <div style={{ fontSize: '20px' }}>🏥</div>
+          </div>
+          <div style={titleStyle}>
+            <h1 style={mainTitleStyle}>Medical Assistant</h1>
+            <div style={subtitleStyle}>{patientData?.name}</div>
           </div>
         </div>
-        <button onClick={handleLogout} style={buttonStyle}>
-          Logout
-        </button>
+        <div style={headerControlsStyle}>
+          <ThemeToggle />
+          <button onClick={handleLogout} style={logoutButtonStyle}>
+            Logout
+          </button>
+        </div>
       </div>
 
+      {/* Main Content */}
       <div style={contentStyle}>
         {/* Disclaimer */}
         <div style={disclaimerStyle}>
-          <strong>⚠️ Important:</strong> This AI assistant is for monitoring only and does not replace medical advice. 
+          <strong>⚠️ Important Disclaimer:</strong> This AI assistant is for monitoring and educational purposes only and does not replace professional medical advice. 
           If you are experiencing a medical emergency, please call emergency services immediately.
         </div>
 
@@ -173,6 +306,32 @@ const PatientDashboard = () => {
                     </div>
                   )}
                 </div>
+        {/* Risk Status */}
+        <div style={sectionStyle}>
+          <div style={sectionTitleStyle}>Current Health Status</div>
+          <div style={riskStatusStyle}>
+            <div style={riskContentStyle}>
+              <div style={{ fontSize: '48px' }}>
+                {riskSummary?.max_risk_level === 'CRITICAL' ? '🚨' : 
+                 riskSummary?.max_risk_level === 'HIGH' ? '⚠️' : 
+                 riskSummary?.max_risk_level === 'MEDIUM' ? '📋' : 
+                 '✓'}
+              </div>
+              <div style={riskTextStyle}>
+                <div style={riskLabelStyle}>Risk Assessment</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                  <RiskBadge level={riskSummary?.max_risk_level || 'LOW'} size="large" />
+                  <span style={{ fontSize: '14px', color: theme.textSecondary }}>
+                    Based on {riskSummary?.total_queries || 0} conversation{riskSummary?.total_queries !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                {riskSummary?.risk_distribution && (
+                  <div style={{ fontSize: '12px', color: theme.textSecondary, display: 'flex', gap: '16px' }}>
+                    {Object.entries(riskSummary.risk_distribution).map(([level, count]) => (
+                      count > 0 && <span key={level}>{level}: {count}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -183,26 +342,33 @@ const PatientDashboard = () => {
             </div>
           </>
         )}
+        {/* Chat Interface */}
+        <div style={sectionStyle}>
+          <div style={sectionTitleStyle}>Chat with AI Assistant</div>
+          <div style={chatContainerStyle}>
+            <ChatBox patientId={patientId} />
+          </div>
+        </div>
 
         {/* Patient Info */}
-        <div style={cardStyle}>
-          <h2 style={{ marginTop: 0, marginBottom: '16px' }}>Your Information</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-            <div>
-              <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '4px' }}>Name</div>
-              <div style={{ fontWeight: 'bold' }}>{patientData?.name}</div>
+        <div style={sectionStyle}>
+          <div style={sectionTitleStyle}>Your Information</div>
+          <div style={infoGridStyle}>
+            <div style={infoCellStyle}>
+              <div style={infoLabelStyle}>Name</div>
+              <div style={infoValueStyle}>{patientData?.name}</div>
             </div>
-            <div>
-              <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '4px' }}>Age</div>
-              <div style={{ fontWeight: 'bold' }}>{patientData?.age || 'N/A'}</div>
+            <div style={infoCellStyle}>
+              <div style={infoLabelStyle}>Age</div>
+              <div style={infoValueStyle}>{patientData?.age || 'N/A'}</div>
             </div>
-            <div>
-              <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '4px' }}>Email</div>
-              <div style={{ fontWeight: 'bold' }}>{patientData?.email || 'N/A'}</div>
+            <div style={infoCellStyle}>
+              <div style={infoLabelStyle}>Email</div>
+              <div style={infoValueStyle}>{patientData?.email || 'N/A'}</div>
             </div>
-            <div>
-              <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '4px' }}>Patient ID</div>
-              <div style={{ fontWeight: 'bold' }}>{patientData?.patient_id}</div>
+            <div style={infoCellStyle}>
+              <div style={infoLabelStyle}>Patient ID</div>
+              <div style={infoValueStyle}>{patientData?.patient_id}</div>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 /**
- * Global Styles
- * Minimal, clean styling for the medical chatbot UI
+ * Global Styles - Modern ChatGPT-style Interface with Dark Mode
+ * Clean, minimal, professional healthcare design
  */
 
 * {
@@ -9,47 +9,107 @@
   padding: 0;
 }
 
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+html {
+  color-scheme: light dark;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  line-height: 1.5;
-  color: #212529;
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
+  line-height: 1.6;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Light Mode (Default) */
+body {
+  color: #1a1a1a;
+  background: #ffffff;
+}
+
+/* Dark Mode */
+[data-theme="dark"] body {
+  color: #f1f5f9;
+  background: #0f172a;
 }
 
 #root {
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 button {
   font-family: inherit;
+  cursor: pointer;
 }
 
 input, select, textarea {
   font-family: inherit;
 }
 
-/* Scrollbar styling */
+/* Scrollbar styling - subtle */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #888;
+  background: #d1d5db;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: #9ca3af;
 }
 
+/* Dark mode scrollbar */
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Animations */
+@keyframes fadeInMessage {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toggleSlider {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(20px);
+  }
+}

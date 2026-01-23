@@ -5,6 +5,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from '../context/ThemeContext';
+import ThemeToggle from '../components/ThemeToggle';
 import RiskBadge from '../components/RiskBadge';
 import AlertList from '../components/AlertList';
 import { getAllPatients, getPatient, getRiskSummary, getChatHistory } from '../api/api';
@@ -18,6 +20,7 @@ const DoctorDashboard = () => {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { theme } = useTheme();
 
   useEffect(() => {
     // Check if logged in
@@ -96,84 +99,231 @@ const DoctorDashboard = () => {
 
   const containerStyle = {
     minHeight: '100vh',
-    backgroundColor: '#f8f9fa',
+    backgroundColor: theme.bg,
+    display: 'flex',
+    flexDirection: 'column',
+    transition: 'background-color 0.3s',
   };
 
   const headerStyle = {
-    backgroundColor: '#28a745',
-    color: 'white',
-    padding: '20px',
+    backgroundColor: theme.bgSecondary,
+    borderBottom: `1px solid ${theme.border}`,
+    padding: '20px 24px',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    boxShadow: `0 1px 3px ${theme.shadow}`,
+    transition: 'all 0.3s',
+  };
+
+  const headerTitleStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+  };
+
+  const titleStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+  };
+
+  const mainTitleStyle = {
+    margin: 0,
+    fontSize: '22px',
+    fontWeight: '600',
+    color: theme.text,
+    transition: 'color 0.3s',
+  };
+
+  const subtitleStyle = {
+    fontSize: '13px',
+    marginTop: '4px',
+    color: theme.textSecondary,
+    transition: 'color 0.3s',
+  };
+
+  const headerControlsStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  };
+
+  const logoutButtonStyle = {
+    padding: '8px 16px',
+    backgroundColor: theme.bgTertiary,
+    color: theme.text,
+    border: `1px solid ${theme.border}`,
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontWeight: '500',
+    fontSize: '14px',
+    transition: 'all 0.2s',
   };
 
   const contentStyle = {
+    flex: 1,
     maxWidth: '1400px',
     margin: '0 auto',
+    width: '100%',
     padding: '24px',
   };
 
   const gridStyle = {
     display: 'grid',
-    gridTemplateColumns: '350px 1fr',
+    gridTemplateColumns: '320px 1fr',
     gap: '24px',
   };
 
   const cardStyle = {
-    backgroundColor: 'white',
-    padding: '24px',
-    borderRadius: '8px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    marginBottom: '24px',
-  };
-
-  const buttonStyle = {
-    padding: '10px 20px',
-    backgroundColor: 'white',
-    color: '#28a745',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontWeight: 'bold',
+    backgroundColor: theme.bgSecondary,
+    padding: '20px',
+    borderRadius: '12px',
+    border: `1px solid ${theme.border}`,
+    boxShadow: `0 2px 8px ${theme.shadow}`,
+    transition: 'all 0.3s',
   };
 
   const patientListStyle = {
-    maxHeight: '400px',
+    maxHeight: '500px',
     overflowY: 'auto',
   };
 
   const patientItemStyle = (isSelected) => ({
     padding: '12px',
     cursor: 'pointer',
-    borderRadius: '4px',
+    borderRadius: '8px',
     marginBottom: '8px',
-    backgroundColor: isSelected ? '#e7f3ff' : 'transparent',
-    border: isSelected ? '2px solid #007bff' : '1px solid #dee2e6',
+    backgroundColor: isSelected ? theme.accentLight : 'transparent',
+    border: isSelected ? `2px solid ${theme.accent}` : `1px solid ${theme.border}`,
+    transition: 'all 0.2s',
   });
+
+  const emptyStateStyle = {
+    textAlign: 'center',
+    padding: '60px 20px',
+    color: theme.textSecondary,
+    transition: 'color 0.3s',
+  };
+
+  const riskGridStyle = {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '16px',
+    marginTop: '12px',
+  };
+
+  const riskStatStyle = {
+    padding: '12px',
+    backgroundColor: theme.bgTertiary,
+    borderRadius: '8px',
+    textAlign: 'center',
+    transition: 'background-color 0.3s',
+  };
+
+  const riskLabelStyle = {
+    fontSize: '12px',
+    color: theme.textSecondary,
+    marginBottom: '8px',
+    fontWeight: '500',
+    transition: 'color 0.3s',
+  };
+
+  const riskValueStyle = {
+    fontSize: '24px',
+    fontWeight: '700',
+    color: theme.text,
+    transition: 'color 0.3s',
+  };
+
+  const conversationItemStyle = {
+    padding: '12px',
+    borderBottom: `1px solid ${theme.border}`,
+    marginBottom: '12px',
+    transition: 'border-color 0.3s',
+  };
+
+  const conversationQStyle = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '8px',
+  };
+
+  const conversationQTextStyle = {
+    fontWeight: '600',
+    fontSize: '14px',
+    color: theme.text,
+    flex: 1,
+    marginRight: '8px',
+    transition: 'color 0.3s',
+  };
+
+  const conversationAStyle = {
+    fontSize: '14px',
+    color: theme.textSecondary,
+    marginBottom: '8px',
+    lineHeight: '1.4',
+    transition: 'color 0.3s',
+  };
+
+  const conversationReasonStyle = {
+    fontSize: '12px',
+    color: theme.textTertiary,
+    fontStyle: 'italic',
+    marginBottom: '4px',
+    transition: 'color 0.3s',
+  };
+
+  const conversationTimeStyle = {
+    fontSize: '12px',
+    color: theme.textTertiary,
+    transition: 'color 0.3s',
+  };
+
+  const patientNameStyle = {
+    fontWeight: '600',
+    fontSize: '14px',
+    color: theme.text,
+    transition: 'color 0.3s',
+  };
+
+  const patientIdStyle = {
+    fontSize: '12px',
+    color: theme.textSecondary,
+    marginTop: '4px',
+    transition: 'color 0.3s',
+  };
 
   if (loading && patients.length === 0) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        Loading...
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: theme.bg, transition: 'background-color 0.3s' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '18px', fontWeight: '500', marginBottom: '12px', color: theme.text }}>Loading patients...</div>
+        </div>
       </div>
     );
   }
 
   return (
     <div style={containerStyle}>
+      {/* Header */}
       <div style={headerStyle}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '24px' }}>Doctor Dashboard</h1>
-          <div style={{ fontSize: '14px', marginTop: '4px', opacity: 0.9 }}>
-            Patient Monitoring System
+        <div style={headerTitleStyle}>
+          <div style={{ fontSize: '20px' }}>👨‍⚕️</div>
+          <div style={titleStyle}>
+            <h1 style={mainTitleStyle}>Doctor Dashboard</h1>
+            <div style={subtitleStyle}>Patient Monitoring System</div>
           </div>
         </div>
-        <button onClick={handleLogout} style={buttonStyle}>
-          Logout
-        </button>
+        <div style={headerControlsStyle}>
+          <ThemeToggle />
+          <button onClick={handleLogout} style={logoutButtonStyle}>
+            Logout
+          </button>
+        </div>
       </div>
 
+      {/* Main Content */}
       <div style={contentStyle}>
         <div style={gridStyle}>
           {/* Left Sidebar */}
@@ -185,9 +335,9 @@ const DoctorDashboard = () => {
 
             {/* Patient List */}
             <div style={cardStyle}>
-              <h2 style={{ marginTop: 0, marginBottom: '16px' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: '600', color: theme.text, transition: 'color 0.3s' }}>
                 Patients ({patients.length})
-              </h2>
+              </h3>
               <div style={patientListStyle}>
                 {patients.map((patient) => (
                   <div
@@ -195,12 +345,14 @@ const DoctorDashboard = () => {
                     onClick={() => handlePatientSelect(patient.patient_id)}
                     style={patientItemStyle(selectedPatient === patient.patient_id)}
                   >
-                    <div style={{ fontWeight: 'bold' }}>{patient.name}</div>
-                    <div style={{ fontSize: '12px', color: '#6c757d', marginTop: '4px' }}>
-                      ID: {patient.patient_id}
+                    <div style={patientNameStyle}>
+                      {patient.name}
+                    </div>
+                    <div style={patientIdStyle}>
+                      {patient.patient_id}
                     </div>
                     {patient.email && (
-                      <div style={{ fontSize: '12px', color: '#6c757d' }}>
+                      <div style={patientIdStyle}>
                         {patient.email}
                       </div>
                     )}
@@ -214,9 +366,9 @@ const DoctorDashboard = () => {
           <div>
             {!selectedPatient ? (
               <div style={cardStyle}>
-                <div style={{ textAlign: 'center', padding: '40px', color: '#6c757d' }}>
+                <div style={emptyStateStyle}>
                   <div style={{ fontSize: '48px', marginBottom: '16px' }}>👈</div>
-                  <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '8px', color: theme.text, transition: 'color 0.3s' }}>
                     Select a patient
                   </div>
                   <div>Choose a patient from the list to view their details</div>
@@ -226,27 +378,27 @@ const DoctorDashboard = () => {
               <>
                 {/* Patient Info & Risk */}
                 <div style={cardStyle}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
-                      <h2 style={{ margin: 0, marginBottom: '8px' }}>
+                      <h2 style={{ margin: '0 0 8px 0', fontSize: '20px', fontWeight: '600', color: theme.text, transition: 'color 0.3s' }}>
                         {selectedPatientData?.name}
                       </h2>
-                      <div style={{ fontSize: '14px', color: '#6c757d' }}>
+                      <div style={{ fontSize: '13px', color: theme.textSecondary, transition: 'color 0.3s' }}>
                         ID: {selectedPatientData?.patient_id}
                       </div>
                       {selectedPatientData?.age && (
-                        <div style={{ fontSize: '14px', color: '#6c757d' }}>
-                          Age: {selectedPatientData.age}
+                        <div style={{ fontSize: '13px', color: theme.textSecondary, transition: 'color 0.3s' }}>
+                          Age: {selectedPatientData.age} years
                         </div>
                       )}
                       {selectedPatientData?.email && (
-                        <div style={{ fontSize: '14px', color: '#6c757d' }}>
-                          Email: {selectedPatientData.email}
+                        <div style={{ fontSize: '13px', color: theme.textSecondary, transition: 'color 0.3s' }}>
+                          {selectedPatientData.email}
                         </div>
                       )}
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '8px' }}>
+                      <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '8px', fontWeight: '500', transition: 'color 0.3s' }}>
                         Current Risk Level
                       </div>
                       <RiskBadge level={riskSummary?.max_risk_level || 'LOW'} size="large" />
@@ -257,29 +409,29 @@ const DoctorDashboard = () => {
                 {/* Risk Summary */}
                 {riskSummary && (
                   <div style={cardStyle}>
-                    <h3 style={{ marginTop: 0, marginBottom: '16px' }}>Risk Summary (Last 30 Days)</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '4px' }}>Total Queries</div>
-                        <div style={{ fontSize: '24px', fontWeight: 'bold' }}>
-                          {riskSummary.total_queries}
-                        </div>
+                    <h3 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: '600', color: theme.text, transition: 'color 0.3s' }}>
+                      Risk Summary (Last 30 Days)
+                    </h3>
+                    <div style={riskGridStyle}>
+                      <div style={riskStatStyle}>
+                        <div style={riskLabelStyle}>Total Queries</div>
+                        <div style={riskValueStyle}>{riskSummary.total_queries}</div>
                       </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '4px' }}>Low Risk</div>
-                        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#28a745' }}>
+                      <div style={riskStatStyle}>
+                        <div style={riskLabelStyle}>Low Risk</div>
+                        <div style={{ ...riskValueStyle, color: theme.accent }}>
                           {riskSummary.risk_distribution?.LOW || 0}
                         </div>
                       </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '4px' }}>Medium/High</div>
-                        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#ff6b6b' }}>
+                      <div style={riskStatStyle}>
+                        <div style={riskLabelStyle}>Medium/High</div>
+                        <div style={{ ...riskValueStyle, color: theme.riskHigh.text }}>
                           {(riskSummary.risk_distribution?.MEDIUM || 0) + (riskSummary.risk_distribution?.HIGH || 0)}
                         </div>
                       </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#6c757d', marginBottom: '4px' }}>Critical</div>
-                        <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#dc3545' }}>
+                      <div style={riskStatStyle}>
+                        <div style={riskLabelStyle}>Critical</div>
+                        <div style={{ ...riskValueStyle, color: theme.riskCritical.text }}>
                           {riskSummary.risk_distribution?.CRITICAL || 0}
                         </div>
                       </div>
@@ -290,31 +442,25 @@ const DoctorDashboard = () => {
                 {/* Recent Conversations */}
                 {chatHistory && chatHistory.history && chatHistory.history.length > 0 && (
                   <div style={cardStyle}>
-                    <h3 style={{ marginTop: 0, marginBottom: '16px' }}>
+                    <h3 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: '600', color: theme.text, transition: 'color 0.3s' }}>
                       Recent Conversations (Last 10)
                     </h3>
                     <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
                       {chatHistory.history.map((item, idx) => (
-                        <div key={idx} style={{ 
-                          padding: '12px', 
-                          borderBottom: '1px solid #dee2e6',
-                          marginBottom: '12px'
-                        }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
-                            <div style={{ fontWeight: 'bold', fontSize: '14px' }}>
-                              Q: {item.question}
-                            </div>
+                        <div key={idx} style={conversationItemStyle}>
+                          <div style={conversationQStyle}>
+                            <div style={conversationQTextStyle}>Q: {item.question}</div>
                             <RiskBadge level={item.risk_level} size="small" />
                           </div>
-                          <div style={{ fontSize: '14px', color: '#495057', marginBottom: '8px' }}>
-                            A: {item.answer.substring(0, 200)}...
+                          <div style={conversationAStyle}>
+                            A: {item.answer.substring(0, 150)}...
                           </div>
                           {item.risk_reason && (
-                            <div style={{ fontSize: '12px', color: '#6c757d', fontStyle: 'italic' }}>
-                              Risk Reason: {item.risk_reason}
+                            <div style={conversationReasonStyle}>
+                              {item.risk_reason}
                             </div>
                           )}
-                          <div style={{ fontSize: '12px', color: '#6c757d', marginTop: '4px' }}>
+                          <div style={conversationTimeStyle}>
                             {new Date(item.timestamp).toLocaleString()}
                           </div>
                         </div>

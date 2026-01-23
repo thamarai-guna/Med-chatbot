@@ -3,6 +3,7 @@ import os
 import falcon
 import rag_engine
 from rag_engine import RAGEngine
+from patient_manager import get_patient_manager
 import torch
 import time
 import gc
@@ -11,6 +12,22 @@ from dotenv import load_dotenv
 load_dotenv()
 
 token=os.getenv("API_KEY")
+
+# Initialize default patient for backwards compatibility
+def init_default_patient():
+    """Initialize default patient if not exists"""
+    pm = get_patient_manager()
+    default_patient_id = "DEFAULT_PATIENT"
+    
+    patient = pm.get_patient(default_patient_id)
+    if not patient:
+        pm.register_patient(
+            patient_id=default_patient_id,
+            name="General User",
+            medical_history="Default patient for single-user mode"
+        )
+    return default_patient_id
+
 # Memory management functions
 def clear_gpu_memory():
     torch.cuda.empty_cache()
@@ -86,8 +103,12 @@ def display_chatbot_page():
     groq_key = os.getenv("GROQ_API_KEY")
     if groq_key and create_chatbot:
         try:
+            # Initialize default patient for backwards compatibility
+            default_patient_id = init_default_patient()
+            
             st.session_state.rag_engine = RAGEngine(
                 vector_store_name=existing_vector_store,
+                patient_id=default_patient_id,
                 max_tokens=max_length,
                 temperature=temperature
             )

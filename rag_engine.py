@@ -10,32 +10,66 @@ from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
+from patient_manager import get_patient_manager
 
 load_dotenv()
 
 
 class RAGEngine:
     """
-    Retrieval-Augmented Generation engine for medical Q&A
+    Retrieval-Augmented Generation engine for medical Q&A with patient support
     """
     
-    def __init__(self, vector_store_name: str, max_tokens: int = 500, temperature: float = 0.7):
+    def __init__(self, vector_store_name: str, patient_id: str, max_tokens: int = 500, temperature: float = 0.7):
         """
-        Initialize RAG engine with vector store
+        Initialize RAG engine with vector store and patient context
         
         Args:
             vector_store_name: Name of the vector store folder
+            patient_id: Unique patient identifier (MANDATORY)
             max_tokens: Maximum tokens for LLM response
             temperature: LLM temperature (0.0-1.0)
         """
+        if not patient_id:
+            raise ValueError("patient_id is mandatory and cannot be empty")
+        
         self.vector_store_name = vector_store_name
+        self.patient_id = patient_id
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.chat_history = []
         self.retriever = None
+        self.patient_manager = get_patient_manager()
+        
+        # Verify patient exists
+        patient = self.patient_manager.get_patient(patient_id)
+        if not patient:
+            raise ValueError(f"Patient {patient_id} not found. Please register first.")
+        
+        # Load patient's chat history
+        self._load_patient_history()
         
         # Load vector store
         self._load_vector_store()
+    
+    def _load_patient_history(self):
+        """Load patient's previous chat history from database"""
+        try:
+            history = self.patient_manager.get_patient_history(self.patient_id, limit=50)
+            # Convert to expected format
+            self.chat_history = [
+                {
+                    "question": h["question"],
+                    "answer": h["answer"],
+                    "risk_level": h["risk_level"],
+                    "risk_reason": h["risk_reason"],
+                    "timestamp": h["timestamp"]
+                }
+                for h in history
+            ]
+        except Exception as e:
+            print(f"Warning: Could not load patient history: {e}")
+            self.chat_history = []
     
     def _load_vector_store(self):
         """Load FAISS vector store with embeddings"""
@@ -366,6 +400,16 @@ Answer:"""
             self.chat_history.append({"question": question, "answer": answer})
             if len(self.chat_history) > 4:  # Keep last 4 exchanges
                 self.chat_history.pop(0)
+            
+            # Save to patient database
+            self.patient_manager.save_chat_message(
+                patient_id=self.patient_id,
+                question=question,
+                answer=answer,
+                risk_level=risk_assessment["risk_level"],
+                risk_reason=risk_assessment["risk_reason"],
+                source_documents=source_documents
+            )
             
             return {
                 "answer": answer,

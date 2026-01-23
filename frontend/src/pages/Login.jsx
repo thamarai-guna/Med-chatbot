@@ -5,6 +5,8 @@
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from '../context/ThemeContext';
+import ThemeToggle from '../components/ThemeToggle';
 
 const Login = () => {
   const [username, setUsername] = useState('');
@@ -12,6 +14,7 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
+  const { theme } = useTheme();
 
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
@@ -68,75 +71,118 @@ const Login = () => {
     justifyContent: 'center',
     alignItems: 'center',
     minHeight: '100vh',
-    backgroundColor: '#f8f9fa',
+    backgroundColor: theme.bg,
+    transition: 'background-color 0.3s',
+    position: 'relative',
+  };
+
+  const toggleStyle = {
+    position: 'absolute',
+    top: '20px',
+    right: '20px',
   };
 
   const cardStyle = {
-    backgroundColor: 'white',
-    padding: '40px',
-    borderRadius: '8px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-    width: '400px',
+    backgroundColor: theme.bgSecondary,
+    padding: '48px',
+    borderRadius: '12px',
+    boxShadow: `0 10px 25px ${theme.shadowLg}`,
+    width: '100%',
+    maxWidth: '420px',
+    border: `1px solid ${theme.border}`,
+    transition: 'all 0.3s',
   };
 
   const titleStyle = {
-    fontSize: '24px',
-    fontWeight: 'bold',
+    fontSize: '28px',
+    fontWeight: '700',
     marginBottom: '8px',
     textAlign: 'center',
+    color: theme.text,
+    transition: 'color 0.3s',
   };
 
   const subtitleStyle = {
     fontSize: '14px',
-    color: '#6c757d',
+    color: theme.textSecondary,
     marginBottom: '32px',
     textAlign: 'center',
+    fontWeight: '500',
+    transition: 'color 0.3s',
   };
 
   const labelStyle = {
     display: 'block',
     marginBottom: '8px',
-    fontWeight: 'bold',
+    fontWeight: '600',
     fontSize: '14px',
+    color: theme.text,
+    transition: 'color 0.3s',
   };
 
   const inputStyle = {
     width: '100%',
-    padding: '12px',
+    padding: '12px 14px',
     marginBottom: '16px',
-    border: '1px solid #ced4da',
-    borderRadius: '4px',
-    fontSize: '14px',
+    border: `1px solid ${theme.border}`,
+    borderRadius: '8px',
+    fontSize: '15px',
     boxSizing: 'border-box',
+    backgroundColor: theme.bg,
+    color: theme.text,
+    transition: 'all 0.3s',
   };
 
   const buttonStyle = {
     width: '100%',
-    padding: '12px',
-    backgroundColor: '#007bff',
+    padding: '12px 16px',
+    backgroundColor: loading ? theme.borderLight : theme.accent,
     color: 'white',
     border: 'none',
-    borderRadius: '4px',
+    borderRadius: '8px',
     cursor: loading ? 'not-allowed' : 'pointer',
-    fontSize: '16px',
-    fontWeight: 'bold',
-    opacity: loading ? 0.6 : 1,
+    fontSize: '15px',
+    fontWeight: '600',
+    opacity: loading ? 0.7 : 1,
+    transition: 'background-color 0.2s',
   };
 
   const errorStyle = {
-    color: '#dc3545',
-    backgroundColor: '#f8d7da',
-    padding: '12px',
-    borderRadius: '4px',
+    color: theme.isDark ? '#fecaca' : '#7f1d1d',
+    backgroundColor: theme.riskCritical.bg,
+    padding: '12px 14px',
+    borderRadius: '8px',
     marginBottom: '16px',
     fontSize: '14px',
+    border: `1px solid ${theme.riskCritical.border}`,
+    transition: 'all 0.3s',
+  };
+
+  const demoBoxStyle = {
+    marginTop: '24px',
+    padding: '14px',
+    backgroundColor: theme.accentLight,
+    borderRadius: '8px',
+    fontSize: '13px',
+    border: `1px solid ${theme.accent}`,
+    color: theme.text,
+    lineHeight: '1.6',
+    transition: 'all 0.3s',
+  };
+
+  const demoLabelStyle = {
+    fontWeight: '600',
+    marginBottom: '8px',
   };
 
   return (
     <div style={containerStyle}>
+      <div style={toggleStyle}>
+        <ThemeToggle />
+      </div>
       <div style={cardStyle}>
-        <h1 style={titleStyle}>🏥 Medical Chatbot</h1>
-        <p style={subtitleStyle}>Post-Discharge Neurological Monitoring</p>
+        <h1 style={titleStyle}>🏥 Medical Assistant</h1>
+        <p style={subtitleStyle}>Post-Discharge Monitoring System</p>
 
         {error && <div style={errorStyle}>{error}</div>}
 
@@ -146,7 +192,7 @@ const Login = () => {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-          placeholder="Enter your username"
+          placeholder="Enter username"
           style={inputStyle}
           disabled={loading}
         />
@@ -157,7 +203,7 @@ const Login = () => {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-          placeholder="Enter your password"
+          placeholder="Enter password"
           style={inputStyle}
           disabled={loading}
         />
@@ -166,12 +212,11 @@ const Login = () => {
           {loading ? 'Logging in...' : 'Login'}
         </button>
 
-        <div style={{ marginTop: '24px', padding: '12px', backgroundColor: '#e7f3ff', borderRadius: '4px', fontSize: '12px' }}>
-          <strong>Demo Credentials:</strong>
-          <div style={{ marginTop: '8px' }}>
-            Patient: patient1 / pass123<br/>
-            Doctor: doctor1 / pass123<br/>
-            Nurse: nurse1 / pass123
+        <div style={demoBoxStyle}>
+          <div style={demoLabelStyle}>Demo Credentials:</div>
+          <div>
+            👤 Patient: patient1 / pass123<br/>
+            👨‍⚕️ Doctor: doctor1 / pass123
           </div>
         </div>
       </div>

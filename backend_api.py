@@ -23,6 +23,17 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rag_engine import RAGEngine
 from patient_manager import get_patient_manager
 from daily_questions import DailyQuestionGenerator
+from clinical_monitoring_prompts import (
+    CLINICAL_MONITORING_SYSTEM_PROMPT,
+    create_question_generation_prompt,
+    create_risk_assessment_prompt,
+    QuestionTracker,
+    MedicalReportValidator,
+    validate_json_response,
+    validate_risk_level,
+    validate_answer_type
+)
+from report_upload_engine import get_upload_handler
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -39,6 +50,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ============================================================================
+# SESSION STORAGE FOR CLINICAL MONITORING
+# ============================================================================
+
+# In-memory session store (use Redis/database in production)
+MONITORING_SESSIONS: Dict[str, Dict[str, Any]] = {}
+
+def generate_session_id() -> str:
+    """Generate unique session ID"""
+    import uuid
+    return str(uuid.uuid4())
+
 
 # ============================================================================
 # DATA MODELS (Request/Response schemas)
@@ -98,6 +122,45 @@ class RiskSummary(BaseModel):
 class HealthResponse(BaseModel):
     """Health check response"""
     status: str
+
+
+# ============================================================================
+# CLINICAL MONITORING MODELS
+# ============================================================================
+
+class MonitoringSessionStartRequest(BaseModel):
+    """Start clinical monitoring session"""
+    patient_id: str
+    max_questions: Optional[int] = 6
+
+
+class MonitoringQuestionResponse(BaseModel):
+    """Clinical monitoring question response"""
+    patient_id: str
+    session_id: str
+    question: str
+    answer_type: str  # YES_NO, SCALE_0_10, SHORT_TEXT
+    question_number: int
+    total_expected: int
+
+
+class MonitoringAnswerRequest(BaseModel):
+    """Submit answer to monitoring question"""
+    patient_id: str
+    session_id: str
+    question: str
+    answer: str
+    answer_type: str
+
+
+class MonitoringAssessmentResponse(BaseModel):
+    """Final clinical monitoring assessment"""
+    patient_id: str
+    session_id: str
+    risk_level: str  # LOW, MEDIUM, HIGH
+    reason: List[str]
+    action: str
+    total_questions_asked: int
     timestamp: str
     version: str
 
@@ -106,6 +169,30 @@ class DailyQuestionRequest(BaseModel):
     question: str
     answer: str
     question_metadata: Optional[Dict[str, Any]] = None
+
+# ============================================================================
+# MEDICAL REPORT UPLOAD MODELS
+# ============================================================================
+
+class ReportUploadResponse(BaseModel):
+    """Response for medical report upload"""
+    success: bool
+    patient_id: str
+    filename: str
+    message: str
+    chunks_count: int
+    timestamp: str
+
+class ReportStatusResponse(BaseModel):
+    """Check if patient has uploaded medical reports"""
+    patient_id: str
+    has_medical_report: bool
+    status: str
+    can_proceed_with_monitoring: bool
+
+# ============================================================================
+# LOGIN MODELS
+# ============================================================================
 
 class LoginRequest(BaseModel):
     """Login request"""
@@ -249,7 +336,13 @@ async def chat_query(request: ChatQueryRequest):
     """
     Main chat endpoint - ask medical question
     
-    Uses dual RAG: shared medical books + patient-specific records
+    MANDATORY PRECONDITION: Medical report must be uploaded and indexed
+    Uses dual RAG: shared medical books + patient-specific vector store
+    
+    BLOCKING RULE: If no medical report has been uploaded:
+    - Chatbot is disabled
+    - Returns blocking message
+    - Patient must upload report first via /api/patient/{patient_id}/upload-report
     """
     try:
         # Validate patient exists
@@ -258,6 +351,18 @@ async def chat_query(request: ChatQueryRequest):
         if not patient:
             raise HTTPException(status_code=404, detail=f"Patient {request.patient_id} not found")
         
+        # CRITICAL GATING: Check if patient has uploaded medical reports
+        handler = get_upload_handler()
+        upload_status = handler.get_upload_status(request.patient_id)
+        
+        if not upload_status["can_proceed_with_monitoring"]:
+            # Block chat - medical report upload is required
+            raise HTTPException(
+                status_code=400,
+                detail="Medical reports are required before chatbot interaction can begin. Please upload your medical reports first."
+            )
+        
+        # Medical report exists - proceed with RAG query
         # Initialize RAG engine with dual vector store retrieval
         rag_engine = RAGEngine(
             patient_id=request.patient_id,
@@ -638,8 +743,446 @@ async def delete_patient_document(patient_id: str, filename: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
-# ROOT ENDPOINT
+# MEDICAL REPORT VALIDATION ENDPOINT
 # ============================================================================
+
+
+# REMOVED: This endpoint was duplicated - keeping the newer version below with proper implementation
+
+# ============================================================================
+# CLINICAL MONITORING ENDPOINTS
+# ============================================================================
+
+
+@app.post("/api/monitoring/session/start")
+async def start_monitoring_session(request: MonitoringSessionStartRequest):
+    """Start a new clinical monitoring session for a patient
+    
+    MANDATORY PRECONDITION: Medical report must be uploaded and indexed
+    
+    BLOCKING RULE: If no medical report has been uploaded:
+    - Monitoring is disabled
+    - Returns blocking message
+    - Patient must upload report first via /api/patient/{patient_id}/upload-report
+    """
+    try:
+        # Validate patient exists
+        pm = get_patient_manager()
+        patient = pm.get_patient(request.patient_id)
+        if not patient:
+            raise HTTPException(status_code=404, detail=f"Patient {request.patient_id} not found")
+        
+        # CRITICAL GATING: Check if patient has uploaded medical reports
+        handler = get_upload_handler()
+        upload_status = handler.get_upload_status(request.patient_id)
+        
+        if not upload_status["can_proceed_with_monitoring"]:
+            # Block monitoring session - medical report upload is required
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "error": "NO_MEDICAL_REPORT",
+                    "message": "Medical reports are required before symptom monitoring can begin.",
+                    "action": "Please upload your medical reports using the Report Upload section."
+                }
+            )
+        
+        # Medical report exists - proceed with session creation
+        session_id = generate_session_id()
+        MONITORING_SESSIONS[session_id] = {
+            "patient_id": request.patient_id,
+            "max_questions": request.max_questions or 6,
+            "question_tracker": QuestionTracker(),
+            "responses": {},  # {question: answer}
+            "created_at": datetime.now().isoformat(),
+            "status": "active"
+        }
+        
+        return {
+            "success": True,
+            "session_id": session_id,
+            "patient_id": request.patient_id,
+            "max_questions": request.max_questions or 6,
+            "message": "Monitoring session started. Ready for first question."
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/monitoring/session/{session_id}/next-question")
+async def get_next_monitoring_question(session_id: str):
+    """Get next monitoring question for active session"""
+    try:
+        # Validate session exists
+        if session_id not in MONITORING_SESSIONS:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        
+        session = MONITORING_SESSIONS[session_id]
+        if session["status"] != "active":
+            raise HTTPException(status_code=400, detail="Session is not active")
+        
+        # Check if max questions reached
+        tracker = session["question_tracker"]
+        if not tracker.can_ask_more(session["max_questions"]):
+            return {
+                "session_id": session_id,
+                "status": "complete",
+                "message": "Maximum questions reached. Ready for assessment.",
+                "question": None
+            }
+        
+        # Get patient info
+        pm = get_patient_manager()
+        patient = pm.get_patient(session["patient_id"])
+        patient_history = patient.get("medical_history", "No previous history")
+        
+        # Get RAG guidance
+        try:
+            rag_engine = RAGEngine(patient_id=session["patient_id"])
+            guidance = rag_engine.retrieve_documents("neurological symptoms monitoring")
+            retrieved_guidance = " ".join([doc.page_content for doc in guidance[:3]]) if guidance else ""
+        except:
+            retrieved_guidance = ""
+        
+        # Generate question using LLM
+        from groq import Groq
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        
+        question_prompt = create_question_generation_prompt(
+            patient_history=patient_history,
+            previous_answers=session["responses"],
+            current_question_number=tracker.question_count + 1,
+            max_questions=session["max_questions"],
+            retrieved_medical_guidance=retrieved_guidance
+        )
+        
+        response = client.chat.completions.create(
+            model="mixtral-8x7b-32768",
+            messages=[
+                {"role": "system", "content": CLINICAL_MONITORING_SYSTEM_PROMPT},
+                {"role": "user", "content": question_prompt}
+            ],
+            temperature=0.7,
+            max_tokens=300
+        )
+        
+        response_text = response.choices[0].message.content
+        
+        # Parse JSON response
+        import json
+        try:
+            question_data = json.loads(response_text)
+            if not validate_json_response(response_text) or not validate_answer_type(question_data.get("answer_type", "")):
+                raise ValueError("Invalid question format")
+        except:
+            raise HTTPException(status_code=500, detail="Failed to generate valid question")
+        
+        # Record question
+        tracker.add_question(question_data["question"])
+        
+        return MonitoringQuestionResponse(
+            patient_id=session["patient_id"],
+            session_id=session_id,
+            question=question_data["question"],
+            answer_type=question_data["answer_type"],
+            question_number=question_data["question_number"],
+            total_expected=question_data["total_expected"]
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/monitoring/session/{session_id}/submit-answer")
+async def submit_monitoring_answer(session_id: str, request: MonitoringAnswerRequest):
+    """Submit answer to monitoring question"""
+    try:
+        # Validate session
+        if session_id not in MONITORING_SESSIONS:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        
+        session = MONITORING_SESSIONS[session_id]
+        if session["status"] != "active":
+            raise HTTPException(status_code=400, detail="Session is not active")
+        
+        # Validate answer type
+        if not validate_answer_type(request.answer_type):
+            raise HTTPException(status_code=400, detail="Invalid answer type")
+        
+        # Validate answer content
+        if request.answer_type == "YES_NO" and request.answer.upper() not in ["YES", "NO"]:
+            raise HTTPException(status_code=400, detail="YES_NO answer must be YES or NO")
+        
+        if request.answer_type == "SCALE_0_10":
+            try:
+                scale_val = int(request.answer)
+                if not (0 <= scale_val <= 10):
+                    raise ValueError
+            except:
+                raise HTTPException(status_code=400, detail="SCALE answer must be 0-10")
+        
+        # Store response
+        session["responses"][request.question] = request.answer
+        
+        # Track negative responses to avoid repetition
+        if request.answer_type == "YES_NO" and request.answer.upper() == "NO":
+            session["question_tracker"].mark_negative_response(request.question)
+        
+        return {
+            "success": True,
+            "session_id": session_id,
+            "question_recorded": request.question,
+            "message": "Answer recorded. Ready for next question."
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/monitoring/session/{session_id}/assessment")
+async def get_monitoring_assessment(session_id: str):
+    """Get final clinical assessment for monitoring session"""
+    try:
+        # Validate session
+        if session_id not in MONITORING_SESSIONS:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        
+        session = MONITORING_SESSIONS[session_id]
+        
+        # Get patient info
+        pm = get_patient_manager()
+        patient = pm.get_patient(session["patient_id"])
+        patient_history = patient.get("medical_history", "No previous history")
+        
+        # Get RAG guidance
+        try:
+            rag_engine = RAGEngine(patient_id=session["patient_id"])
+            guidance = rag_engine.retrieve_documents("neurological symptoms risk assessment")
+            retrieved_guidance = " ".join([doc.page_content for doc in guidance[:3]]) if guidance else ""
+        except:
+            retrieved_guidance = ""
+        
+        # Generate risk assessment using LLM
+        from groq import Groq
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        
+        assessment_prompt = create_risk_assessment_prompt(
+            patient_history=patient_history,
+            monitoring_responses=session["responses"],
+            retrieved_medical_guidance=retrieved_guidance
+        )
+        
+        response = client.chat.completions.create(
+            model="mixtral-8x7b-32768",
+            messages=[
+                {"role": "system", "content": CLINICAL_MONITORING_SYSTEM_PROMPT},
+                {"role": "user", "content": assessment_prompt}
+            ],
+            temperature=0.5,
+            max_tokens=400
+        )
+        
+        response_text = response.choices[0].message.content
+        
+        # Parse assessment JSON
+        import json
+        try:
+            assessment_data = json.loads(response_text)
+            if not validate_risk_level(assessment_data.get("risk_level", "")):
+                raise ValueError("Invalid risk level")
+        except:
+            raise HTTPException(status_code=500, detail="Failed to generate valid assessment")
+        
+        # Mark session complete
+        session["status"] = "complete"
+        session["assessment"] = assessment_data
+        session["completed_at"] = datetime.now().isoformat()
+        
+        # Store in patient history
+        pm.add_to_patient_history(
+            patient_id=session["patient_id"],
+            question="Clinical Monitoring Session",
+            answer=json.dumps(session["responses"]),
+            risk_level=assessment_data["risk_level"],
+            risk_reason=" / ".join(assessment_data["reason"]),
+            source_documents=[]
+        )
+        
+        return MonitoringAssessmentResponse(
+            patient_id=session["patient_id"],
+            session_id=session_id,
+            risk_level=assessment_data["risk_level"],
+            reason=assessment_data["reason"],
+            action=assessment_data["action"],
+            total_questions_asked=session["question_tracker"].question_count,
+            timestamp=session["completed_at"]
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/monitoring/session/{session_id}")
+async def get_session_status(session_id: str):
+    """Get current status of monitoring session"""
+    try:
+        if session_id not in MONITORING_SESSIONS:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        
+        session = MONITORING_SESSIONS[session_id]
+        
+        return {
+            "session_id": session_id,
+            "patient_id": session["patient_id"],
+            "status": session["status"],
+            "questions_asked": session["question_tracker"].question_count,
+            "max_questions": session["max_questions"],
+            "created_at": session["created_at"],
+            "completed_at": session.get("completed_at"),
+            "assessment": session.get("assessment") if session["status"] == "complete" else None
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# MEDICAL REPORT UPLOAD ENDPOINTS
+# ============================================================================
+# Gateway for RAG system initialization
+# Reports MUST be uploaded before chatbot/monitoring becomes active
+
+@app.post("/api/patient/{patient_id}/upload-report", response_model=ReportUploadResponse)
+async def upload_medical_report(
+    patient_id: str,
+    file: UploadFile = File(...)
+):
+    """
+    Upload patient medical report (PDF, image, or text)
+    
+    CRITICAL SYSTEM FUNCTION:
+    1. Validates patient exists
+    2. Extracts text from file
+    3. Chunks and embeds text
+    4. Stores in patient-specific vector store
+    5. Enables RAG-guided chatbot and monitoring
+    
+    Supported formats:
+    - PDF (.pdf)
+    - Images with OCR (.jpg, .jpeg, .png)
+    - Plain text (.txt)
+    
+    Returns:
+        ReportUploadResponse with success/chunks_count/message
+    """
+    try:
+        print(f"[UPLOAD DEBUG] Patient ID: {patient_id}")
+        print(f"[UPLOAD DEBUG] File received: {file.filename if file else 'None'}")
+        print(f"[UPLOAD DEBUG] File size: {file.size if file else 'None'}")
+        print(f"[UPLOAD DEBUG] File content type: {file.content_type if file else 'None'}")
+        
+        # Validate patient exists
+        pm = get_patient_manager()
+        patient = pm.get_patient(patient_id)
+        if not patient:
+            print(f"[UPLOAD ERROR] Patient not found: {patient_id}")
+            raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
+        
+        if not file:
+            print("[UPLOAD ERROR] No file provided")
+            raise HTTPException(status_code=400, detail="No file provided")
+        
+        # Get upload handler
+        handler = get_upload_handler()
+        
+        # Save uploaded file
+        file_bytes = await file.read()
+        print(f"[UPLOAD DEBUG] File bytes read: {len(file_bytes)}")
+        
+        success, file_path = handler.save_uploaded_file(file_bytes, file.filename)
+        
+        if not success:
+            print(f"[UPLOAD ERROR] Failed to save file: {file_path}")
+            raise HTTPException(status_code=400, detail=file_path)
+        
+        print(f"[UPLOAD DEBUG] File saved to: {file_path}")
+        
+        # Process report: extract -> chunk -> embed -> store in vector DB
+        result = handler.process_and_index_report(patient_id, file_path, file.filename)
+        
+        if not result["success"]:
+            error_msg = result.get("message", "Unknown error during processing")
+            print(f"[UPLOAD ERROR] Processing failed: {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg)
+        
+        print(f"[UPLOAD SUCCESS] Report processed: {result['chunks_count']} chunks")
+        
+        return ReportUploadResponse(
+            success=True,
+            patient_id=patient_id,
+            filename=file.filename,
+            message=result["message"],
+            chunks_count=result["chunks_count"],
+            timestamp=result["timestamp"]
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Report upload failed: {str(e)}")
+
+
+@app.get("/api/patient/{patient_id}/report/status", response_model=ReportStatusResponse)
+async def check_medical_report_status(patient_id: str):
+    """
+    CHECK IF PATIENT HAS UPLOADED MEDICAL REPORTS
+    
+    THIS ENDPOINT MUST BE CALLED FIRST before any monitoring/chat
+    
+    Returns:
+        has_medical_report: Boolean flag enabling/disabling chatbot
+        can_proceed_with_monitoring: Must be true to proceed
+        
+    If False:
+        - Chatbot is BLOCKED
+        - Monitoring is BLOCKED
+        - Return gating message to frontend
+    """
+    try:
+        # Validate patient exists
+        pm = get_patient_manager()
+        patient = pm.get_patient(patient_id)
+        if not patient:
+            raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
+        
+        # Check if patient has vector store (reports uploaded)
+        handler = get_upload_handler()
+        status = handler.get_upload_status(patient_id)
+        
+        return ReportStatusResponse(
+            patient_id=patient_id,
+            has_medical_report=status["has_medical_report"],
+            status=status["status"],
+            can_proceed_with_monitoring=status["can_proceed_with_monitoring"]
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Status check failed: {str(e)}")
+
 
 @app.get("/")
 async def root():
@@ -650,18 +1193,28 @@ async def root():
         "status": "running",
         "docs": "/docs",
         "openapi": "/openapi.json",
+        "critical_requirement": "Medical reports must be uploaded before monitoring can begin",
         "endpoints": {
             "health": "GET /health",
             "patients": {
                 "register": "POST /api/patient/register",
                 "get": "GET /api/patient/{patient_id}",
                 "list": "GET /api/patient",
+                "check_report_status": "GET /api/patient/{patient_id}/report/status",
                 "risk_summary": "GET /api/patient/{patient_id}/risk/summary"
             },
             "chat": {
-                "query": "POST /api/chat/query",
+                "query": "POST /api/chat/query (requires medical report)",
                 "history": "GET /api/chat/history/{patient_id}",
                 "clear_history": "DELETE /api/chat/history/{patient_id}"
+            },
+            "clinical_monitoring": {
+                "description": "All monitoring endpoints require valid medical report",
+                "start_session": "POST /api/monitoring/session/start (requires medical report)",
+                "next_question": "POST /api/monitoring/session/{session_id}/next-question",
+                "submit_answer": "POST /api/monitoring/session/{session_id}/submit-answer",
+                "get_assessment": "POST /api/monitoring/session/{session_id}/assessment",
+                "session_status": "GET /api/monitoring/session/{session_id}"
             },
             "documents": {
                 "upload": "POST /api/documents/upload"
@@ -705,24 +1258,29 @@ async def general_exception_handler(request, exc):
 @app.on_event("startup")
 async def startup_event():
     """Initialize resources on startup"""
-    print("✅ Medical Chatbot API starting...")
+    print("[OK] Medical Chatbot API starting...")
     try:
         pm = get_patient_manager()
-        print("✅ Patient manager initialized")
-        print("✅ Database connection verified")
+        print("[OK] Patient manager initialized")
+        print("[OK] Database connection verified")
     except Exception as e:
-        print(f"⚠️ Startup warning: {e}")
+        print(f"[ERROR] Startup failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise  # Re-raise so uvicorn knows about the error
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
-    print("🛑 Medical Chatbot API shutting down...")
+    print("[SHUTDOWN] Medical Chatbot API shutting down...")
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=8000,
-        log_level="info"
-    )
+# NOTE: Only run directly if needed for development
+# When using: python -m uvicorn backend_api:app, the if __name__ block is not executed
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(
+#         app,
+#         host="0.0.0.0",
+#         port=8000,
+#         log_level="info"
+#     )

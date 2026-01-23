@@ -59,11 +59,11 @@ export const getAllPatients = async () => {
 // CHAT / RAG
 // ============================================================================
 
-export const sendChatMessage = async (patientId, message, vectorStoreName = 'DefaultVectorDB') => {
+export const sendChatMessage = async (patientId, message) => {
   const response = await api.post('/api/chat/query', {
     patient_id: patientId,
     message: message,
-    vector_store_name: vectorStoreName,
+    // No vector_store_name - uses dual retrieval automatically
   });
   return response.data;
 };
@@ -92,10 +92,69 @@ export const getRiskSummary = async (patientId, days = 30) => {
 };
 
 // ============================================================================
-// DOCUMENTS (not implemented in UI yet)
+// PATIENT-SPECIFIC DOCUMENT MANAGEMENT
+// ============================================================================
+
+export const uploadPatientDocuments = async (patientId, files, uploaderRole = 'patient') => {
+  const formData = new FormData();
+  
+  // Append multiple files
+  files.forEach(file => {
+    formData.append('files', file);
+  });
+  
+  const response = await api.post(`/api/documents/patient/${patientId}/upload`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+    params: {
+      uploader_role: uploaderRole,
+    },
+  });
+  return response.data;
+};
+
+export const listPatientDocuments = async (patientId) => {
+  const response = await api.get(`/api/documents/patient/${patientId}/list`);
+  return response.data;
+};
+
+export const deletePatientDocument = async (patientId, filename) => {
+  const response = await api.delete(`/api/documents/patient/${patientId}/${filename}`);
+  return response.data;
+};
+
+// ============================================================================
+// DAILY QUESTIONS
+// ============================================================================
+
+export const generateDailyQuestion = async (patientId) => {
+  const response = await api.post(`/api/questions/daily/${patientId}`);
+  return response.data;
+};
+
+export const saveDailyAnswer = async (patientId, question, answer, metadata = null) => {
+  const response = await api.post(`/api/questions/daily/${patientId}/answer`, {
+    question: question,
+    answer: answer,
+    question_metadata: metadata,
+  });
+  return response.data;
+};
+
+export const getDailyAnswersHistory = async (patientId, days = 7) => {
+  const response = await api.get(`/api/questions/daily/${patientId}/history`, {
+    params: { days },
+  });
+  return response.data;
+};
+
+// ============================================================================
+// DEPRECATED (OLD DOCUMENT UPLOAD - REMOVE)
 // ============================================================================
 
 export const uploadDocument = async (patientId, file) => {
+  console.warn('uploadDocument() is deprecated. Use uploadPatientDocuments() instead.');
   const formData = new FormData();
   formData.append('file', file);
   formData.append('patient_id', patientId);

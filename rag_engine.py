@@ -17,15 +17,15 @@ load_dotenv()
 
 class RAGEngine:
     """
-    Retrieval-Augmented Generation engine for medical Q&A with patient support
+    Retrieval-Augmented Generation engine for medical Q&A with dual vector store support
+    Retrieves from BOTH shared medical books AND patient-specific medical records
     """
     
-    def __init__(self, vector_store_name: str, patient_id: str, max_tokens: int = 500, temperature: float = 0.7):
+    def __init__(self, patient_id: str, max_tokens: int = 500, temperature: float = 0.7):
         """
-        Initialize RAG engine with vector store and patient context
+        Initialize RAG engine with dual vector store retrieval
         
         Args:
-            vector_store_name: Name of the vector store folder
             patient_id: Unique patient identifier (MANDATORY)
             max_tokens: Maximum tokens for LLM response
             temperature: LLM temperature (0.0-1.0)
@@ -33,12 +33,12 @@ class RAGEngine:
         if not patient_id:
             raise ValueError("patient_id is mandatory and cannot be empty")
         
-        self.vector_store_name = vector_store_name
         self.patient_id = patient_id
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.chat_history = []
-        self.retriever = None
+        self.shared_retriever = None
+        self.patient_retriever = None
         self.patient_manager = get_patient_manager()
         
         # Verify patient exists
@@ -49,8 +49,8 @@ class RAGEngine:
         # Load patient's chat history
         self._load_patient_history()
         
-        # Load vector store
-        self._load_vector_store()
+        # Load dual vector stores (shared medical books + patient records)
+        self._load_dual_vector_stores()
     
     def _load_patient_history(self):
         """Load patient's previous chat history from database"""
@@ -71,26 +71,52 @@ class RAGEngine:
             print(f"Warning: Could not load patient history: {e}")
             self.chat_history = []
     
-    def _load_vector_store(self):
-        """Load FAISS vector store with embeddings"""
+    def _load_dual_vector_stores(self):
+        """
+        Load TWO vector stores:
+        1. Shared medical books (system-wide, read-only)
+        2. Patient-specific medical records (private, per-patient)
+        """
         try:
             instructor_embeddings = HuggingFaceEmbeddings(
                 model_name="sentence-transformers/all-MiniLM-L6-v2", 
                 model_kwargs={'device': 'cpu'}
             )
             
-            loaded_db = FAISS.load_local(
-                f"vector store/{self.vector_store_name}", 
-                instructor_embeddings, 
-                allow_dangerous_deserialization=True
-            )
+            # Load shared medical books vector store (ALWAYS AVAILABLE)
+            shared_path = "vector store/shared"
+            if os.path.exists(shared_path):
+                shared_db = FAISS.load_local(
+                    shared_path,
+                    instructor_embeddings,
+                    allow_dangerous_deserialization=True
+                )
+                self.shared_retriever = shared_db.as_retriever(search_kwargs={"k": 3})
+                print(f"✅ Loaded shared medical books vector store")
+            else:
+                print(f"⚠️ Shared medical books vector store not found at {shared_path}")
+                self.shared_retriever = None
             
-            # Store both the vector store and retriever
-            self.vector_store = loaded_db
-            self.retriever = loaded_db.as_retriever(search_kwargs={"k": 3})
+            # Load patient-specific vector store (IF EXISTS)
+            patient_path = f"vector store/patient_{self.patient_id}"
+            if os.path.exists(patient_path):
+                patient_db = FAISS.load_local(
+                    patient_path,
+                    instructor_embeddings,
+                    allow_dangerous_deserialization=True
+                )
+                self.patient_retriever = patient_db.as_retriever(search_kwargs={"k": 3})
+                print(f"✅ Loaded patient-specific medical records for {self.patient_id}")
+            else:
+                print(f"ℹ️ No patient-specific medical records found for {self.patient_id}")
+                self.patient_retriever = None
+            
+            # At least one retriever must be available
+            if not self.shared_retriever and not self.patient_retriever:
+                raise RuntimeError("No vector stores available. System medical books not loaded.")
             
         except Exception as e:
-            raise RuntimeError(f"Failed to load vector store '{self.vector_store_name}': {str(e)}")
+            raise RuntimeError(f"Failed to load vector stores: {str(e)}")
     
     def _call_groq(self, prompt: str) -> str:
         """
@@ -333,37 +359,49 @@ Analyze the above information and respond with JSON only:
     
     def answer_question(self, question: str, context_docs: Optional[List[str]] = None) -> Dict[str, Any]:
         """
-        Answer a question using RAG with Groq LLM
+        Answer a question using dual RAG retrieval with Groq LLM
+        Retrieves context from BOTH shared medical books AND patient records
         
         Args:
             question: User's question
-            context_docs: Optional list of context documents (if None, retrieves from vector store)
+            context_docs: Optional list of context documents (if None, retrieves from both vector stores)
             
         Returns:
             dict with:
                 - answer: Generated answer text
-                - risk_level: Risk assessment (LOW/MEDIUM/HIGH)
+                - risk_level: Risk assessment (LOW/MEDIUM/HIGH/CRITICAL)
                 - risk_reason: Explanation of risk level
                 - source_documents: List of source document snippets
         """
         try:
-            # Retrieve relevant documents if not provided
+            # Retrieve relevant documents from BOTH stores if not provided
             if context_docs is None:
-                if self.retriever is None:
+                source_documents = []
+                
+                # Retrieve from shared medical books
+                if self.shared_retriever:
+                    shared_docs = self.shared_retriever.invoke(question)
+                    source_documents.extend([doc.page_content for doc in shared_docs])
+                
+                # Retrieve from patient-specific records
+                if self.patient_retriever:
+                    patient_docs = self.patient_retriever.invoke(question)
+                    source_documents.extend([doc.page_content for doc in patient_docs])
+                
+                # If no retrievers available, return error
+                if not source_documents:
                     return {
-                        "answer": "Error: Vector store not initialized",
+                        "answer": "Error: No medical knowledge sources available",
                         "risk_level": "UNKNOWN",
                         "risk_reason": "System error",
                         "source_documents": []
                     }
                 
-                # Use invoke method instead of get_relevant_documents
-                relevant_docs = self.retriever.invoke(question)
-                source_documents = [doc.page_content for doc in relevant_docs]
-                context = "\n\n".join(source_documents[:3])
+                # Combine contexts (prioritize patient records, then medical books)
+                context = "\n\n".join(source_documents[:6])  # Top 6 chunks total
             else:
                 source_documents = context_docs
-                context = "\n\n".join(context_docs[:3])
+                context = "\n\n".join(context_docs[:6])
             
             # Build chat history context
             history_context = ""
@@ -374,7 +412,7 @@ Analyze the above information and respond with JSON only:
                 ])
                 history_context = f"\n\nPrevious conversation:\n{history_context}\n\n"
             
-            # Create prompt for Groq
+            # Create prompt for Groq with combined context
             prompt = f"""You are a helpful medical assistant for a hospital system. Use the following context to answer the question accurately and professionally.
 
 IMPORTANT:
@@ -383,7 +421,7 @@ IMPORTANT:
 - For urgent symptoms, recommend immediate medical attention
 - Always encourage consulting healthcare professionals for diagnosis
 
-{history_context}Context from medical documents:
+{history_context}Context from medical sources (books + patient records):
 {context}
 
 Question: {question}
@@ -435,21 +473,25 @@ Answer:"""
         return self.chat_history.copy()
 
 
-# Standalone function for simple usage
-def answer_question(question: str, vector_store_name: str = "DefaultVectorDB", 
-                   context_docs: Optional[List[str]] = None,
+# Standalone function for simple usage (DEPRECATED - use class directly)
+def answer_question(question: str, patient_id: str, context_docs: Optional[List[str]] = None,
                    max_tokens: int = 500) -> Dict[str, Any]:
     """
-    Standalone function to answer a question using RAG
+    Standalone function to answer a question using dual RAG
+    
+    DEPRECATED: Use RAGEngine class directly for better control
     
     Args:
         question: User's question
-        vector_store_name: Name of the vector store to use
+        patient_id: Patient identifier (MANDATORY)
         context_docs: Optional list of context documents
         max_tokens: Maximum tokens for response
         
     Returns:
         dict with answer, risk_level, risk_reason, source_documents
     """
-    engine = RAGEngine(vector_store_name=vector_store_name, max_tokens=max_tokens)
+    if not patient_id:
+        raise ValueError("patient_id is required")
+    
+    engine = RAGEngine(patient_id=patient_id, max_tokens=max_tokens)
     return engine.answer_question(question, context_docs)

@@ -288,67 +288,46 @@ const PatientDashboard = () => {
 
         {/* Risk Status - Only show if report exists */}
         {reportStatus?.has_medical_report && (
-          <>
-            <div style={cardStyle}>
-              <h2 style={{ marginTop: 0, marginBottom: '16px' }}>Current Risk Status</h2>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <RiskBadge level={riskSummary?.max_risk_level || 'LOW'} size="large" />
-                <div>
-                  <div style={{ fontSize: '14px', color: '#6c757d' }}>
-                    Based on {riskSummary?.total_queries || 0} recent conversations
+          <div style={sectionStyle}>
+            <div style={sectionTitleStyle}>Current Health Status</div>
+            <div style={riskStatusStyle}>
+              <div style={riskContentStyle}>
+                <div style={{ fontSize: '48px' }}>
+                  {riskSummary?.max_risk_level === 'CRITICAL' ? '🚨' : 
+                   riskSummary?.max_risk_level === 'HIGH' ? '⚠️' : 
+                   riskSummary?.max_risk_level === 'MEDIUM' ? '📋' : 
+                   '✓'}
+                </div>
+                <div style={riskTextStyle}>
+                  <div style={riskLabelStyle}>Risk Assessment</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                    <RiskBadge level={riskSummary?.max_risk_level || 'LOW'} size="large" />
+                    <span style={{ fontSize: '14px', color: theme.textSecondary }}>
+                      Based on {riskSummary?.total_queries || 0} conversation{riskSummary?.total_queries !== 1 ? 's' : ''}
+                    </span>
                   </div>
                   {riskSummary?.risk_distribution && (
-                    <div style={{ fontSize: '12px', color: '#6c757d', marginTop: '4px' }}>
-                      Distribution: 
+                    <div style={{ fontSize: '12px', color: theme.textSecondary, display: 'flex', gap: '16px' }}>
                       {Object.entries(riskSummary.risk_distribution).map(([level, count]) => (
-                        count > 0 && <span key={level} style={{ marginLeft: '8px' }}>{level}: {count}</span>
+                        count > 0 && <span key={level}>{level}: {count}</span>
                       ))}
                     </div>
                   )}
                 </div>
-        {/* Risk Status */}
-        <div style={sectionStyle}>
-          <div style={sectionTitleStyle}>Current Health Status</div>
-          <div style={riskStatusStyle}>
-            <div style={riskContentStyle}>
-              <div style={{ fontSize: '48px' }}>
-                {riskSummary?.max_risk_level === 'CRITICAL' ? '🚨' : 
-                 riskSummary?.max_risk_level === 'HIGH' ? '⚠️' : 
-                 riskSummary?.max_risk_level === 'MEDIUM' ? '📋' : 
-                 '✓'}
-              </div>
-              <div style={riskTextStyle}>
-                <div style={riskLabelStyle}>Risk Assessment</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                  <RiskBadge level={riskSummary?.max_risk_level || 'LOW'} size="large" />
-                  <span style={{ fontSize: '14px', color: theme.textSecondary }}>
-                    Based on {riskSummary?.total_queries || 0} conversation{riskSummary?.total_queries !== 1 ? 's' : ''}
-                  </span>
-                </div>
-                {riskSummary?.risk_distribution && (
-                  <div style={{ fontSize: '12px', color: theme.textSecondary, display: 'flex', gap: '16px' }}>
-                    {Object.entries(riskSummary.risk_distribution).map(([level, count]) => (
-                      count > 0 && <span key={level}>{level}: {count}</span>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
+          </div>
+        )}
 
-            {/* Chat Interface */}
-            <div style={cardStyle}>
-              <h2 style={{ marginTop: 0, marginBottom: '16px' }}>Chat with AI Medical Assistant</h2>
+        {/* Chat Interface - Enabled only if report exists */}
+        {reportStatus?.has_medical_report && (
+          <div style={sectionStyle}>
+            <div style={sectionTitleStyle}>Chat with AI Assistant</div>
+            <div style={chatContainerStyle}>
               <ChatBox patientId={patientId} />
             </div>
-          </>
-        )}
-        {/* Chat Interface */}
-        <div style={sectionStyle}>
-          <div style={sectionTitleStyle}>Chat with AI Assistant</div>
-          <div style={chatContainerStyle}>
-            <ChatBox patientId={patientId} />
           </div>
-        </div>
+        )}
 
         {/* Patient Info */}
         <div style={sectionStyle}>

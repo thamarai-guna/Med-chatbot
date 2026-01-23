@@ -11,6 +11,7 @@
 
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useTheme } from '../context/ThemeContext';
 
 const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
   const [reportStatus, setReportStatus] = useState(null);
@@ -19,6 +20,8 @@ const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
   const [uploadError, setUploadError] = useState(null);
   const [uploadSuccess, setUploadSuccess] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
+
+  const { theme, isDark } = useTheme();
 
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
@@ -138,52 +141,59 @@ const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
   };
 
   const containerStyle = {
-    backgroundColor: 'white',
+    backgroundColor: theme.bgSecondary,
     padding: '24px',
-    borderRadius: '8px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    borderRadius: '12px',
+    border: `1px solid ${theme.border}`,
+    boxShadow: `0 2px 8px ${theme.shadow}`,
     marginBottom: '24px',
+    transition: 'all 0.3s',
+    color: theme.text,
   };
 
   const warningStyle = {
-    backgroundColor: '#f8d7da',
-    border: '1px solid #f5c6cb',
-    color: '#721c24',
+    backgroundColor: theme.riskHigh.bg,
+    border: `1px solid ${theme.riskHigh.border}`,
+    color: theme.riskHigh.text,
     padding: '12px 16px',
-    borderRadius: '4px',
+    borderRadius: '8px',
     marginBottom: '16px',
     fontSize: '14px',
+    transition: 'all 0.3s',
   };
 
   const successStyle = {
-    backgroundColor: '#d4edda',
-    border: '1px solid #c3e6cb',
-    color: '#155724',
+    backgroundColor: theme.riskLow.bg,
+    border: `1px solid ${theme.riskLow.border}`,
+    color: theme.riskLow.text,
     padding: '12px 16px',
-    borderRadius: '4px',
+    borderRadius: '8px',
     marginBottom: '16px',
     fontSize: '14px',
+    transition: 'all 0.3s',
   };
 
   const errorStyle = {
-    backgroundColor: '#f8d7da',
-    border: '1px solid #f5c6cb',
-    color: '#721c24',
+    backgroundColor: theme.riskHigh.bg,
+    border: `1px solid ${theme.riskHigh.border}`,
+    color: theme.riskHigh.text,
     padding: '12px 16px',
-    borderRadius: '4px',
+    borderRadius: '8px',
     marginBottom: '16px',
     fontSize: '14px',
+    transition: 'all 0.3s',
   };
 
   const uploadAreaStyle = {
-    border: '2px dashed #007bff',
-    borderRadius: '8px',
+    border: `2px dashed ${theme.accent}`,
+    borderRadius: '12px',
     padding: '32px',
     textAlign: 'center',
-    backgroundColor: '#f0f7ff',
+    backgroundColor: isDark ? theme.bgTertiary : theme.bgSecondary,
     marginBottom: '16px',
     cursor: 'pointer',
     transition: 'all 0.3s ease',
+    color: theme.text,
   };
 
   const fileInputStyle = {
@@ -192,23 +202,26 @@ const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
 
   const buttonStyle = {
     padding: '10px 20px',
-    backgroundColor: '#007bff',
-    color: 'white',
+    backgroundColor: theme.accent,
+    color: '#ffffff',
     border: 'none',
-    borderRadius: '4px',
+    borderRadius: '8px',
     cursor: uploading ? 'not-allowed' : 'pointer',
-    fontWeight: 'bold',
-    opacity: uploading ? 0.6 : 1,
+    fontWeight: '600',
+    opacity: uploading ? 0.7 : 1,
+    boxShadow: `0 1px 2px ${theme.shadow}`,
+    transition: 'all 0.2s ease',
   };
 
   const statusBadgeStyle = (hasReport) => ({
     display: 'inline-block',
     padding: '8px 16px',
     borderRadius: '20px',
-    fontWeight: 'bold',
+    fontWeight: '600',
     fontSize: '14px',
-    backgroundColor: hasReport ? '#d4edda' : '#f8d7da',
-    color: hasReport ? '#155724' : '#721c24',
+    backgroundColor: hasReport ? theme.riskLow.bg : theme.riskHigh.bg,
+    color: hasReport ? theme.riskLow.text : theme.riskHigh.text,
+    border: `1px solid ${hasReport ? theme.riskLow.border : theme.riskHigh.border}`,
   });
 
   // Loading state
@@ -228,7 +241,7 @@ const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
   return (
     <div style={containerStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h2 style={{ margin: 0 }}>📋 Medical Report Upload</h2>
+        <h2 style={{ margin: 0, color: theme.text }}>📋 Medical Report Upload</h2>
         <span style={statusBadgeStyle(hasReport)}>
           {hasReport ? '✅ Report Uploaded' : '⚠️ No Report'}
         </span>
@@ -252,8 +265,8 @@ const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
       {!hasReport && (
         <>
           <div style={{ marginBottom: '24px' }}>
-            <h3 style={{ marginBottom: '12px' }}>Upload Your Medical Report</h3>
-            <p style={{ color: '#6c757d', fontSize: '14px' }}>
+            <h3 style={{ marginBottom: '12px', color: theme.text }}>Upload Your Medical Report</h3>
+            <p style={{ color: theme.textSecondary, fontSize: '14px' }}>
               <strong>Supported formats:</strong> PDF, Images (JPG/PNG), or Plain Text<br/>
               <strong>Max size:</strong> 10MB<br/>
               <strong>Examples:</strong> Discharge summary, medical history, test results, doctor's notes
@@ -265,14 +278,14 @@ const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
             style={uploadAreaStyle}
             onDragOver={(e) => {
               e.preventDefault();
-              e.currentTarget.style.backgroundColor = '#e3f2fd';
+              e.currentTarget.style.backgroundColor = isDark ? theme.bgSecondary : theme.bgTertiary;
             }}
             onDragLeave={(e) => {
               e.currentTarget.style.backgroundColor = '#f0f7ff';
             }}
             onDrop={(e) => {
               e.preventDefault();
-              e.currentTarget.style.backgroundColor = '#f0f7ff';
+              e.currentTarget.style.backgroundColor = isDark ? theme.bgTertiary : theme.bgSecondary;
               if (e.dataTransfer.files[0]) {
                 setSelectedFile(e.dataTransfer.files[0]);
               }
@@ -289,22 +302,23 @@ const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
               disabled={uploading}
             />
             <div style={{ fontSize: '48px', marginBottom: '12px' }}>📁</div>
-            <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '8px' }}>
+            <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '8px', color: theme.text }}>
               {selectedFile ? selectedFile.name : 'Drag and drop your file here'}
             </div>
-            <div style={{ fontSize: '14px', color: '#6c757d', marginBottom: '16px' }}>
+            <div style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '16px' }}>
               or
             </div>
             <button
               onClick={() => window.fileInput?.click()}
               style={{
                 padding: '8px 16px',
-                backgroundColor: 'white',
-                border: '1px solid #007bff',
-                color: '#007bff',
-                borderRadius: '4px',
+                backgroundColor: theme.bgSecondary,
+                border: `1px solid ${theme.accent}`,
+                color: theme.accent,
+                borderRadius: '8px',
                 cursor: 'pointer',
-                fontWeight: 'bold',
+                fontWeight: 600,
+                boxShadow: `0 1px 2px ${theme.shadow}`,
               }}
               disabled={uploading}
             >
@@ -340,12 +354,12 @@ const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
                 onClick={() => setSelectedFile(null)}
                 style={{
                   padding: '10px 20px',
-                  backgroundColor: '#6c757d',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
+                  backgroundColor: theme.bgTertiary,
+                  color: theme.text,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '8px',
                   cursor: 'pointer',
-                  fontWeight: 'bold',
+                  fontWeight: 600,
                 }}
                 disabled={uploading}
               >
@@ -360,13 +374,15 @@ const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
       <div style={{
         marginTop: '24px',
         padding: '16px',
-        backgroundColor: '#f8f9fa',
-        borderRadius: '4px',
+        backgroundColor: theme.bgSecondary,
+        borderRadius: '8px',
+        border: `1px solid ${theme.border}`,
         fontSize: '13px',
-        color: '#6c757d',
+        color: theme.textSecondary,
         lineHeight: '1.6',
+        transition: 'all 0.3s',
       }}>
-        <strong>ℹ️ How it works:</strong>
+        <strong style={{ color: theme.text }}>ℹ️ How it works:</strong>
         <ul style={{ margin: '8px 0 0 20px', paddingLeft: 0 }}>
           <li>Your report is securely processed and stored</li>
           <li>Text is extracted and split into indexed chunks</li>

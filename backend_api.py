@@ -1274,13 +1274,12 @@ async def shutdown_event():
     """Cleanup on shutdown"""
     print("[SHUTDOWN] Medical Chatbot API shutting down...")
 
-# NOTE: Only run directly if needed for development
-# When using: python -m uvicorn backend_api:app, the if __name__ block is not executed
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run(
-#         app,
-#         host="0.0.0.0",
-#         port=8000,
-#         log_level="info"
-#     )
+# Run server directly when executed as script
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        log_level="info"
+    )

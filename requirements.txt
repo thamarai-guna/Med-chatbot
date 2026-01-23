@@ -1,34 +1,34 @@
 # Core RAG & LLM Dependencies
-langchain==1.2.6
-langchain-community==0.4.1
-langchain-core==1.2.7
-langchain-huggingface==1.2.0
-faiss-cpu==1.13.2
+langchain
+langchain-community
+langchain-core
+langchain-huggingface
+faiss-cpu
 
-# Embeddings & Transformers (tested versions)
-sentence-transformers==3.0.1
-transformers==4.57.6
-huggingface-hub==0.36.0
-torch==2.10.0
-torchvision==0.25.0
+# Embeddings & Transformers
+sentence-transformers
+transformers
+huggingface-hub
+torch
+torchvision
 
 # Document Processing
-pypdf==6.6.0
+pypdf
 
 # API & Server
-fastapi==0.115.12
-uvicorn[standard]==0.35.2
-python-dotenv==1.2.1
-python-multipart==0.0.6
-requests==2.32.5
+fastapi
+uvicorn[standard]
+python-dotenv
+python-multipart
+requests
 
 # Optional: Streamlit (legacy prototype)
-streamlit==1.53.0
+streamlit
 
 # Dependencies
-packaging==25.0
-pydantic==2.12.5
-pydantic-settings==2.12.0
-numpy==2.4.1
-scikit-learn==1.8.0
-scipy==1.17.0
+packaging
+pydantic
+pydantic-settings
+numpy
+scikit-learn
+scipy

@@ -1,11 +1,6 @@
 /**
  * Patient Dashboard
- * Main interface for patients to interact with AI chatbot
- * 
- * MANDATORY FLOW:
- * 1. Check medical report status
- * 2. If no report → Show upload component (BLOCKING)
- * 3. If report exists → Show chat interface (ENABLED)
+ * Refactored with Split-View Layout (Sidebar + Chat)
  */
 
 import React, { useState, useEffect } from 'react';
@@ -23,36 +18,34 @@ const PatientDashboard = () => {
   const [riskSummary, setRiskSummary] = useState(null);
   const [reportStatus, setReportStatus] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  
   const navigate = useNavigate();
+  // Theme context is still used for toggle, but styles are now CSS vars
   const { theme } = useTheme();
 
   const patientId = localStorage.getItem('patientId');
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
   useEffect(() => {
-    // Check if logged in
     const role = localStorage.getItem('userRole');
     if (role !== 'patient' || !patientId) {
       navigate('/login');
       return;
     }
-
     loadPatientData();
   }, []);
 
   const loadPatientData = async () => {
     try {
-      // Load patient data
       const patient = await getPatient(patientId);
       setPatientData(patient);
 
-      // Check medical report status (CRITICAL GATE)
       const statusResponse = await axios.get(
         `${API_BASE_URL}/api/patient/${patientId}/report/status`
       );
       setReportStatus(statusResponse.data);
 
-      // Load risk summary only if report exists
       if (statusResponse.data.has_medical_report) {
         const risk = await getRiskSummary(patientId);
         setRiskSummary(risk);
@@ -65,7 +58,6 @@ const PatientDashboard = () => {
   };
 
   const handleReportUploaded = () => {
-    // Refresh status and data after report upload
     loadPatientData();
   };
 
@@ -74,284 +66,125 @@ const PatientDashboard = () => {
     navigate('/login');
   };
 
-  const containerStyle = {
-    minHeight: '100vh',
-    backgroundColor: theme.bg,
-    display: 'flex',
-    flexDirection: 'column',
-    transition: 'background-color 0.3s',
-  };
-
-  const headerStyle = {
-    backgroundColor: theme.bgSecondary,
-    borderBottom: `1px solid ${theme.border}`,
-    padding: '20px 24px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    boxShadow: `0 1px 3px ${theme.shadow}`,
-    transition: 'all 0.3s',
-  };
-
-  const headerTitleStyle = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-  };
-
-  const titleStyle = {
-    display: 'flex',
-    flexDirection: 'column',
-  };
-
-  const mainTitleStyle = {
-    margin: 0,
-    fontSize: '22px',
-    fontWeight: '600',
-    color: theme.text,
-    transition: 'color 0.3s',
-  };
-
-  const subtitleStyle = {
-    fontSize: '13px',
-    marginTop: '4px',
-    color: theme.textSecondary,
-    transition: 'color 0.3s',
-  };
-
-  const headerControlsStyle = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  };
-
-  const logoutButtonStyle = {
-    padding: '8px 16px',
-    backgroundColor: theme.bgTertiary,
-    color: theme.text,
-    border: `1px solid ${theme.border}`,
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontWeight: '500',
-    fontSize: '14px',
-    transition: 'all 0.2s',
-  };
-
-  const contentStyle = {
-    flex: 1,
-    maxWidth: '900px',
-    margin: '0 auto',
-    width: '100%',
-    padding: '24px',
-  };
-
-  const disclaimerStyle = {
-    backgroundColor: theme.riskMedium.bg,
-    border: `1px solid ${theme.riskMedium.border}`,
-    padding: '16px',
-    borderRadius: '8px',
-    marginBottom: '24px',
-    fontSize: '14px',
-    color: theme.riskMedium.text,
-    lineHeight: '1.5',
-    transition: 'all 0.3s',
-  };
-
-  const sectionStyle = {
-    marginBottom: '24px',
-  };
-
-  const sectionTitleStyle = {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: theme.text,
-    marginBottom: '12px',
-    transition: 'color 0.3s',
-  };
-
-  const riskStatusStyle = {
-    backgroundColor: theme.bgSecondary,
-    padding: '20px',
-    borderRadius: '12px',
-    border: `1px solid ${theme.border}`,
-    boxShadow: `0 2px 8px ${theme.shadow}`,
-    transition: 'all 0.3s',
-  };
-
-  const riskContentStyle = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-  };
-
-  const riskTextStyle = {
-    flex: 1,
-  };
-
-  const riskLabelStyle = {
-    fontSize: '13px',
-    color: theme.textSecondary,
-    marginBottom: '4px',
-    transition: 'color 0.3s',
-  };
-
-  const riskCountStyle = {
-    fontSize: '15px',
-    fontWeight: '500',
-    color: theme.text,
-    transition: 'color 0.3s',
-  };
-
-  const chatContainerStyle = {
-    backgroundColor: theme.bgSecondary,
-    borderRadius: '12px',
-    border: `1px solid ${theme.border}`,
-    overflow: 'hidden',
-    transition: 'all 0.3s',
-  };
-
-  const infoGridStyle = {
-    backgroundColor: theme.bgSecondary,
-    padding: '20px',
-    borderRadius: '12px',
-    border: `1px solid ${theme.border}`,
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: '16px',
-    transition: 'all 0.3s',
-  };
-
-  const infoCellStyle = {
-    display: 'flex',
-    flexDirection: 'column',
-  };
-
-  const infoLabelStyle = {
-    fontSize: '12px',
-    color: theme.textSecondary,
-    marginBottom: '4px',
-    fontWeight: '500',
-    transition: 'color 0.3s',
-  };
-
-  const infoValueStyle = {
-    fontSize: '15px',
-    fontWeight: '600',
-    color: theme.text,
-    transition: 'color 0.3s',
-  };
-
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: theme.bg, transition: 'background-color 0.3s' }}>
+      <div className="app-container" style={{ alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '18px', fontWeight: '500', marginBottom: '12px', color: theme.text }}>Loading your dashboard...</div>
+          <div className="text-xl">Loading your dashboard...</div>
         </div>
       </div>
     );
   }
 
+  const hasReport = reportStatus?.has_medical_report;
+
   return (
-    <div style={containerStyle}>
-      {/* Header */}
-      <div style={headerStyle}>
-        <div style={headerTitleStyle}>
-          <div>
-            <div style={{ fontSize: '20px' }}>🏥</div>
+    <div className="app-container">
+      {/* Sidebar - Persistent Info */}
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        
+        {/* Sidebar Header */}
+        <div style={{ marginBottom: '2rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+            <span style={{ fontSize: '1.5rem' }}>🏥</span>
+            <h1 className="text-lg" style={{ fontWeight: 700 }}>Medical AI</h1>
           </div>
-          <div style={titleStyle}>
-            <h1 style={mainTitleStyle}>Medical Assistant</h1>
-            <div style={subtitleStyle}>{patientData?.name}</div>
+          <p className="text-sm text-muted">Welcome, {patientData?.name?.split(' ')[0]}</p>
+        </div>
+
+        {/* Risk Status Card (Mini) */}
+        {hasReport && (
+          <div className="card" style={{ marginBottom: '1.5rem', borderLeft: '4px solid var(--pk-accent)' }}>
+            <div className="text-xs text-muted" style={{ marginBottom: '0.5rem' }}>CURRENT RISK STATUS</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+               <RiskBadge level={riskSummary?.max_risk_level || 'LOW'} size="medium" />
+               <span style={{ fontSize: '1.5rem' }}>
+                 {riskSummary?.max_risk_level === 'CRITICAL' ? '🚨' : 
+                  riskSummary?.max_risk_level === 'HIGH' ? '⚠️' : 
+                  riskSummary?.max_risk_level === 'MEDIUM' ? '📋' : '✓'}
+               </span>
+            </div>
+          </div>
+        )}
+
+        {/* Navigation / Steps */}
+        <div style={{ flex: 1 }}>
+          <div className="text-xs text-muted" style={{ fontWeight: 600, marginBottom: '0.75rem', textTransform: 'uppercase' }}>
+            Checklist
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <div className={`btn ${hasReport ? 'btn-ghost' : 'btn-primary'}`} style={{ justifyContent: 'flex-start', opacity: hasReport ? 0.8 : 1 }}>
+               <span style={{ marginRight: '0.5rem' }}>{hasReport ? '✅' : '1️⃣'}</span>
+               Import Records
+            </div>
+            <div className={`btn ${hasReport ? 'btn-primary' : 'btn-ghost'}`} style={{ justifyContent: 'flex-start', opacity: hasReport ? 1 : 0.5 }}>
+               <span style={{ marginRight: '0.5rem' }}>{hasReport ? '2️⃣' : '🔒'}</span>
+               Chat Assistant
+            </div>
           </div>
         </div>
-        <div style={headerControlsStyle}>
-          <ThemeToggle />
-          <button onClick={handleLogout} style={logoutButtonStyle}>
-            Logout
+
+        {/* Sidebar Footer */}
+        <div style={{ paddingTop: '1rem', borderTop: '1px solid var(--pk-border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <span className="text-sm text-muted">Theme</span>
+            <ThemeToggle />
+          </div>
+          <button onClick={handleLogout} className="btn btn-outline" style={{ width: '100%' }}>
+            Log Out
           </button>
         </div>
-      </div>
+      </aside>
 
-      {/* Main Content */}
-      <div style={contentStyle}>
-        {/* Disclaimer */}
-        <div style={disclaimerStyle}>
-          <strong>⚠️ Important Disclaimer:</strong> This AI assistant is for monitoring and educational purposes only and does not replace professional medical advice. 
-          If you are experiencing a medical emergency, please call emergency services immediately.
+      {/* Main Content Area - Chat First */}
+      <main className="main-content">
+        
+        {/* Mobile Header Toggle */}
+        <div className="d-md-none" style={{ padding: '1rem', borderBottom: '1px solid var(--pk-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+           <span className="text-lg font-bold">Medical Assistant</span>
+           <button className="btn btn-ghost" onClick={() => setSidebarOpen(!sidebarOpen)}>☰</button>
         </div>
 
-        {/* Medical Report Upload - MANDATORY GATE BEFORE CHATTING */}
-        <ReportUploadComponent 
-          patientId={patientId} 
-          onReportUploaded={handleReportUploaded}
+        {/* Disclaimer Banner */}
+         <div style={{ padding: '0.5rem 1rem', background: 'var(--pk-risk-medium-bg)', borderBottom: '1px solid var(--pk-risk-medium-border)', textAlign: 'center', fontSize: '0.8rem', color: 'var(--pk-risk-medium-text)' }}>
+             ⚠️ AI Monitor - For educational purposes only. Call emergency services in a crisis.
+         </div>
+
+        {/* Content Body */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {hasReport ? (
+             /* Chat takes full remaining height */
+             <ChatBox patientId={patientId} />
+          ) : (
+             /* Empty State / Upload Gate */
+             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+                <div style={{ maxWidth: '500px', width: '100%' }}>
+                   <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                      <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>📂</div>
+                      <h2 className="text-xl" style={{ marginBottom: '0.5rem' }}>Upload Medical Records</h2>
+                      <p className="text-muted">To ensure the AI gives safe and relevant monitoring advice, please upload your hospital discharge or medical report PDF.</p>
+                   </div>
+                   
+                   <div className="card">
+                      <ReportUploadComponent 
+                        patientId={patientId} 
+                        onReportUploaded={handleReportUploaded}
+                      />
+                   </div>
+                </div>
+             </div>
+          )}
+        </div>
+
+      </main>
+
+      {/* Overlay for mobile sidebar */}
+      {sidebarOpen && (
+        <div 
+          onClick={() => setSidebarOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 40 }}
         />
-
-        {/* Risk Status - Only show if report exists */}
-        {reportStatus?.has_medical_report && (
-          <div style={sectionStyle}>
-            <div style={sectionTitleStyle}>Current Health Status</div>
-            <div style={riskStatusStyle}>
-              <div style={riskContentStyle}>
-                <div style={{ fontSize: '48px' }}>
-                  {riskSummary?.max_risk_level === 'CRITICAL' ? '🚨' : 
-                   riskSummary?.max_risk_level === 'HIGH' ? '⚠️' : 
-                   riskSummary?.max_risk_level === 'MEDIUM' ? '📋' : 
-                   '✓'}
-                </div>
-                <div style={riskTextStyle}>
-                  <div style={riskLabelStyle}>Risk Assessment</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                    <RiskBadge level={riskSummary?.max_risk_level || 'LOW'} size="large" />
-                    <span style={{ fontSize: '14px', color: theme.textSecondary }}>
-                      Based on {riskSummary?.total_queries || 0} conversation{riskSummary?.total_queries !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                  {riskSummary?.risk_distribution && (
-                    <div style={{ fontSize: '12px', color: theme.textSecondary, display: 'flex', gap: '16px' }}>
-                      {Object.entries(riskSummary.risk_distribution).map(([level, count]) => (
-                        count > 0 && <span key={level}>{level}: {count}</span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Chat Interface - Enabled only if report exists */}
-        {reportStatus?.has_medical_report && (
-          <div style={sectionStyle}>
-            <div style={sectionTitleStyle}>Chat with AI Assistant</div>
-            <div style={chatContainerStyle}>
-              <ChatBox patientId={patientId} />
-            </div>
-          </div>
-        )}
-
-        {/* Patient Info */}
-        <div style={sectionStyle}>
-          <div style={sectionTitleStyle}>Your Information</div>
-          <div style={infoGridStyle}>
-            <div style={infoCellStyle}>
-              <div style={infoLabelStyle}>Name</div>
-              <div style={infoValueStyle}>{patientData?.name}</div>
-            </div>
-            <div style={infoCellStyle}>
-              <div style={infoLabelStyle}>Age</div>
-              <div style={infoValueStyle}>{patientData?.age || 'N/A'}</div>
-            </div>
-            <div style={infoCellStyle}>
-              <div style={infoLabelStyle}>Email</div>
-              <div style={infoValueStyle}>{patientData?.email || 'N/A'}</div>
-            </div>
-            <div style={infoCellStyle}>
-              <div style={infoLabelStyle}>Patient ID</div>
-              <div style={infoValueStyle}>{patientData?.patient_id}</div>
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -3,12 +3,16 @@ RAG Engine - Core logic for medical chatbot
 Streamlit-independent module for RAG-based question answering with Groq LLM API
 """
 
+
+
 import os
 import json
 import requests
 from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
 from datetime import datetime
+from openai import OpenAI
+import google.generativeai as genai
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from patient_manager import get_patient_manager
@@ -43,6 +47,27 @@ class RAGEngine:
         self.patient_manager = get_patient_manager()
         self.question_count = 0  # Track questions in current session
         self.max_questions_per_session = 6  # Enforce maximum (per latest spec)
+        
+        # --- Configure Multi-Provider Fallback ---
+        
+        # 1. DeepSeek (Primary)
+        self.deepseek_client = None
+        ds_key = os.getenv("DEEPSEEK_API_KEY")
+        if ds_key:
+            self.deepseek_client = OpenAI(api_key=ds_key, base_url="https://api.deepseek.com")
+        
+        # 2. Groq (Secondary)
+        self.groq_client = None
+        groq_key = os.getenv("GROQ_API_KEY")
+        if groq_key:
+            self.groq_client = OpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
+            
+        # 3. Gemini (Tertiary)
+        self.gemini_model = None
+        gemini_key = os.getenv("GOOGLE_API_KEY")
+        if gemini_key:
+            genai.configure(api_key=gemini_key)
+            self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
         
         # Verify patient exists
         patient = self.patient_manager.get_patient(patient_id)
@@ -96,9 +121,6 @@ class RAGEngine:
             print(f"[RAG] Patient {self.patient_id} History Length: {len(self.chat_history)}")     
             print(f"[RAG] Restored question count from history: {self.question_count}")
             print(f"[RAG] Today is: {today}")
-            
-            # FORCE RESET FOR DEBUGGING
-            # self.question_count = 0  <-- Actually, let's keep the logic but log it loudly.
             
         except Exception as e:
             print(f"Warning: Could not load patient history: {e}")
@@ -163,58 +185,113 @@ class RAGEngine:
         except Exception as e:
             raise RuntimeError(f"Failed to load vector stores: {str(e)}")
     
-    def _call_groq(self, prompt: str) -> str:
+    def _call_llm_with_fallback(self, prompt: str) -> str:
         """
-        Call Groq LLM API for text generation
-        
-        Args:
-            prompt: Input prompt for the LLM
-            
-        Returns:
-            Generated text response
+        Try LLM providers in order: DeepSeek -> Groq -> Gemini
         """
-        api_key = os.getenv("GROQ_API_KEY")
+        errors = []
         
-        if not api_key:
-            return "Error: GROQ_API_KEY environment variable not set"
-        
-        url = "https://api.groq.com/openai/v1/chat/completions"
-        
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": "llama-3.3-70b-versatile",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            "max_tokens": self.max_tokens,
-            "temperature": self.temperature
-        }
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=60)
-            response.raise_for_status()
-            
-            data = response.json()
-            return data["choices"][0]["message"]["content"].strip()
-            
-        except requests.exceptions.HTTPError as e:
-            # Try to extract error details from response
+        # 1. Try DeepSeek (Primary)
+        if self.deepseek_client:
             try:
-                error_detail = e.response.json() if hasattr(e.response, 'json') else str(e.response.text)
-                return f"Error calling Groq API: {e.response.status_code} - {str(error_detail)}"
-            except:
-                return f"Error calling Groq API: {str(e)}"
-        except requests.exceptions.RequestException as e:
-            return f"Error calling Groq API: {str(e)}"
+                response = self.deepseek_client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                errors.append(f"DeepSeek Error: {e}")
+                print(f"⚠️ DeepSeek failed: {e}. Trying Groq...")
+
+        # 2. Try Groq (Secondary)
+        if self.groq_client:
+            try:
+                response = self.groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                errors.append(f"Groq Error: {e}")
+                print(f"⚠️ Groq failed: {e}. Trying Gemini...")
+
+        # 3. Try Gemini (Tertiary)
+        if self.gemini_model:
+            try:
+                generation_config = genai.types.GenerationConfig(
+                    max_output_tokens=self.max_tokens,
+                    temperature=self.temperature
+                )
+                response = self.gemini_model.generate_content(prompt, generation_config=generation_config)
+                return response.text.strip()
+            except Exception as e:
+                errors.append(f"Gemini Error: {e}")
+                print(f"⚠️ Gemini failed: {e}.")
+
+        return f"Error: All LLM providers failed. Details: {'; '.join(errors)}"
+
+    def _call_llm_with_fallback_json(self, system_prompt: str, user_prompt: str) -> str:
+        """
+        Try LLM providers in order for JSON output
+        """
+        errors = []
+        
+        # 1. Try DeepSeek
+        if self.deepseek_client:
+            try:
+                response = self.deepseek_client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=300,
+                    temperature=0.3,
+                    response_format={"type": "json_object"}
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                errors.append(f"DeepSeek JSON Error: {e}")
+        
+        # 2. Try Groq
+        if self.groq_client:
+            try:
+                response = self.groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=300,
+                    temperature=0.3,
+                    response_format={"type": "json_object"}
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                errors.append(f"Groq JSON Error: {e}")
+        
+        # 3. Try Gemini
+        if self.gemini_model:
+            try:
+                combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+                generation_config = genai.types.GenerationConfig(
+                    max_output_tokens=300,
+                    temperature=0.3,
+                    response_mime_type="application/json"
+                )
+                response = self.gemini_model.generate_content(combined_prompt, generation_config=generation_config)
+                return response.text.strip()
+            except Exception as e:
+                errors.append(f"Gemini JSON Error: {e}")
+
+        return "{}" # Return empty JSON compatible string on failure
     
     def _assess_medical_risk(self, question: str, answer: str, context: str) -> Dict[str, str]:
+
         """
         Assess medical risk level using LLM reasoning
         
@@ -244,42 +321,10 @@ class RAGEngine:
         )
         
         try:
-            # Call Groq API for risk assessment
-            api_key = os.getenv("GROQ_API_KEY")
-            if not api_key:
-                return {
-                    "risk_level": "UNKNOWN",
-                    "risk_reason": "API key not configured"
-                }
-            
-            url = "https://api.groq.com/openai/v1/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-            
-            payload = {
-                "model": "llama-3.3-70b-versatile",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": self._get_risk_assessment_system_prompt()
-                    },
-                    {
-                        "role": "user",
-                        "content": risk_prompt
-                    }
-                ],
-                "max_tokens": 300,
-                "temperature": 0.3,  # Lower temperature for more consistent risk assessment
-                "response_format": {"type": "json_object"}
-            }
-            
-            response = requests.post(url, json=payload, headers=headers, timeout=30)
-            response.raise_for_status()
-            
-            data = response.json()
-            risk_json = data["choices"][0]["message"]["content"].strip()
+            risk_json = self._call_llm_with_fallback_json(
+                system_prompt=self._get_risk_assessment_system_prompt(),
+                user_prompt=risk_prompt
+            )
             
             # Parse JSON response
             import json
@@ -560,8 +605,8 @@ Retrieved medical context:
 
 Start directly with the NEXT question. If you have enough info (≥3 questions or at max limit), return the JSON assessment."""
             
-            # Call Groq API
-            answer = self._call_groq(prompt)
+            # Call LLM with fallback
+            answer = self._call_llm_with_fallback(prompt)
 
             # Guarantee post-upload acknowledgement on the very first question
             # Only when patient records exist, it's the first question of the day, and no JSON assessment was returned

@@ -291,14 +291,15 @@ class ReportUploadHandler:
         """Initialize components"""
         self.processor = ReportProcessor()
         self.vector_manager = PatientVectorStoreManager()
-        self.upload_dir = "uploads"
-        os.makedirs(self.upload_dir, exist_ok=True)
+        self.upload_base_dir = "patient_records"
+        os.makedirs(self.upload_base_dir, exist_ok=True)
     
-    def save_uploaded_file(self, file_content: bytes, original_filename: str) -> Tuple[bool, str]:
+    def save_uploaded_file(self, patient_id: str, file_content: bytes, original_filename: str) -> Tuple[bool, str]:
         """
-        Save uploaded file to temporary directory
+        Save uploaded file to PERSISTENT patient directory
         
         Args:
+            patient_id: Patient identifier
             file_content: File bytes
             original_filename: Original filename from upload
             
@@ -306,16 +307,20 @@ class ReportUploadHandler:
             (success: bool, file_path: str)
         """
         try:
+            # Create patient specific directory
+            patient_dir = os.path.join(self.upload_base_dir, patient_id)
+            os.makedirs(patient_dir, exist_ok=True)
+            
             # Use original filename to preserve extension
-            file_path = os.path.join(self.upload_dir, original_filename)
+            file_path = os.path.join(patient_dir, original_filename)
             
             # Ensure unique filename
             if os.path.exists(file_path):
                 base, ext = os.path.splitext(original_filename)
                 counter = 1
-                while os.path.exists(os.path.join(self.upload_dir, f"{base}_{counter}{ext}")):
+                while os.path.exists(os.path.join(patient_dir, f"{base}_{counter}{ext}")):
                     counter += 1
-                file_path = os.path.join(self.upload_dir, f"{base}_{counter}{ext}")
+                file_path = os.path.join(patient_dir, f"{base}_{counter}{ext}")
             
             with open(file_path, 'wb') as f:
                 f.write(file_content)
@@ -386,13 +391,14 @@ class ReportUploadHandler:
             result["message"] = f"Unexpected error: {str(e)}"
             return result
         
+        except Exception as e:
+            result["message"] = f"Unexpected error: {str(e)}"
+            return result
+        
         finally:
-            # Clean up temporary file
-            try:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-            except:
-                pass
+            # DO NOT DELETE KEY MEDICAl RECORDS
+            # We persist them for record keeping and status checking
+            pass
     
     def get_upload_status(self, patient_id: str) -> Dict[str, Any]:
         """
@@ -401,13 +407,31 @@ class ReportUploadHandler:
         Returns:
             Status dict with has_medical_report flag
         """
-        has_reports = self.vector_manager.patient_has_reports(patient_id)
+        # Check if vector store exists
+        vs_exists = self.vector_manager.patient_has_reports(patient_id)
+        
+        # ALSO Check if actual files exist in patient_records
+        # This handles cases where files were deleted but VS remains, or VS created but empty
+        records_dir = os.path.join("patient_records", patient_id)
+        files_exist = False
+        if os.path.exists(records_dir) and os.path.isdir(records_dir):
+            # Check for at least one file
+            files = [f for f in os.listdir(records_dir) if os.path.isfile(os.path.join(records_dir, f))]
+            files_exist = len(files) > 0
+            
+        # Robust check: Needs both VS and actual files
+        # (Or at least files, since VS drives the chat. But VS alone is not enough if files are gone)
+        # For simplicity/robustness: If files exist, we assume VS matches or will be rebuilt.
+        # If NO files exist, we definitely shouldn't chat.
+        
+        can_proceed = vs_exists and files_exist
         
         return {
             "patient_id": patient_id,
-            "has_medical_report": has_reports,
-            "status": "Ready for monitoring" if has_reports else "Awaiting medical report upload",
-            "can_proceed_with_monitoring": has_reports
+            "has_medical_report": can_proceed,
+            "status": "Ready for monitoring" if can_proceed else "Awaiting medical report upload",
+            "can_proceed_with_monitoring": can_proceed,
+            "file_count": len(files) if files_exist else 0
         }
 
 

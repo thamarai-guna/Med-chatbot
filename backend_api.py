@@ -356,10 +356,16 @@ async def chat_query(request: ChatQueryRequest):
         upload_status = handler.get_upload_status(request.patient_id)
         
         if not upload_status["can_proceed_with_monitoring"]:
-            # Block chat - medical report upload is required
-            raise HTTPException(
-                status_code=400,
-                detail="Medical reports are required before chatbot interaction can begin. Please upload your medical reports first."
+            # MANDATORY PRE-UPLOAD BEHAVIOR
+            # Return hardcoded instruction message instead of error
+            return ChatQueryResponse(
+                patient_id=request.patient_id,
+                question=request.message,
+                answer="To begin today’s check-in, please upload your medical reports using the **Upload Medical Reports** section above.",
+                risk_level="LOW",  # Neutral risk
+                risk_reason="Waiting for medical report upload.",
+                source_documents=[],
+                timestamp=datetime.now().isoformat()
             )
         
         # Medical report exists - proceed with RAG query
@@ -614,11 +620,16 @@ async def upload_patient_documents(
                 saved_files.append(file.filename)
             
             # Extract text content
-            await file.seek(0)  # Reset file pointer
             if file.filename.endswith(".pdf"):
-                combined_content += falcon.read_pdf(file.file)
+                import io
+                # Use BytesIO to ensure compatibility with PdfReader
+                file_stream = io.BytesIO(content)
+                combined_content += falcon.read_pdf(file_stream)
             elif file.filename.endswith(".txt"):
-                combined_content += falcon.read_txt(file.file)
+                # Decode bytes directly
+                text_content = content.decode("utf-8", errors="ignore")
+                text_content = text_content.replace("\n", " \n ").replace("\r", " \r ")
+                combined_content += text_content
             else:
                 raise HTTPException(
                     status_code=400,
@@ -728,12 +739,22 @@ async def delete_patient_document(patient_id: str, filename: str):
         
         os.remove(file_path)
         
+        # Check if any files remain
+        files_remaining = os.listdir(f"patient_records/{patient_id}")
+        if not files_remaining:
+            # If no files left, remove the vector store to RESET the patient status
+            # This ensures "has_medical_report" becomes False
+            import shutil
+            vs_path = f"vector store/patient_{patient_id}"
+            if os.path.exists(vs_path):
+                shutil.rmtree(vs_path)
+        
         return {
             "success": True,
             "message": f"Deleted document {filename} for patient {patient_id}",
             "patient_id": patient_id,
             "filename": filename,
-            "note": "Vector store embeddings still exist. Re-upload remaining documents to rebuild.",
+            "remaining_files": len(files_remaining),
             "timestamp": datetime.now().isoformat()
         }
     
@@ -1111,7 +1132,7 @@ async def upload_medical_report(
         file_bytes = await file.read()
         print(f"[UPLOAD DEBUG] File bytes read: {len(file_bytes)}")
         
-        success, file_path = handler.save_uploaded_file(file_bytes, file.filename)
+        success, file_path = handler.save_uploaded_file(patient_id, file_bytes, file.filename)
         
         if not success:
             print(f"[UPLOAD ERROR] Failed to save file: {file_path}")

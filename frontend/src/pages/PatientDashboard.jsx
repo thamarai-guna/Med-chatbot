@@ -19,7 +19,9 @@ const PatientDashboard = () => {
   const [reportStatus, setReportStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  
+
+  const [activeTab, setActiveTab] = useState('files'); // 'files' or 'chat'
+
   const navigate = useNavigate();
   // Theme context is still used for toggle, but styles are now CSS vars
   const { theme } = useTheme();
@@ -46,10 +48,16 @@ const PatientDashboard = () => {
       );
       setReportStatus(statusResponse.data);
 
+      // Auto-switch to chat if reports exist and we haven't manually set a tab yet
+      // (Simplified logic: always default to chat if ready, files if not)
       if (statusResponse.data.has_medical_report) {
+        setActiveTab('chat');
         const risk = await getRiskSummary(patientId);
         setRiskSummary(risk);
+      } else {
+        setActiveTab('files');
       }
+
     } catch (err) {
       console.error('Failed to load patient data:', err);
     } finally {
@@ -57,8 +65,20 @@ const PatientDashboard = () => {
     }
   };
 
-  const handleReportUploaded = () => {
-    loadPatientData();
+  const handleReportUploaded = async () => {
+    // Refresh data but don't force switch tab immediately, let user see success message
+    const patient = await getPatient(patientId);
+    setPatientData(patient);
+
+    const statusResponse = await axios.get(
+      `${API_BASE_URL}/api/patient/${patientId}/report/status`
+    );
+    setReportStatus(statusResponse.data);
+
+    if (statusResponse.data.has_medical_report) {
+      const risk = await getRiskSummary(patientId);
+      setRiskSummary(risk);
+    }
   };
 
   const handleLogout = () => {
@@ -82,7 +102,7 @@ const PatientDashboard = () => {
     <div className="app-container">
       {/* Sidebar - Persistent Info */}
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-        
+
         {/* Sidebar Header */}
         <div style={{ marginBottom: '2rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
@@ -97,30 +117,46 @@ const PatientDashboard = () => {
           <div className="card" style={{ marginBottom: '1.5rem', borderLeft: '4px solid var(--pk-accent)' }}>
             <div className="text-xs text-muted" style={{ marginBottom: '0.5rem' }}>CURRENT RISK STATUS</div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-               <RiskBadge level={riskSummary?.max_risk_level || 'LOW'} size="medium" />
-               <span style={{ fontSize: '1.5rem' }}>
-                 {riskSummary?.max_risk_level === 'CRITICAL' ? '🚨' : 
-                  riskSummary?.max_risk_level === 'HIGH' ? '⚠️' : 
-                  riskSummary?.max_risk_level === 'MEDIUM' ? '📋' : '✓'}
-               </span>
+              <RiskBadge level={riskSummary?.max_risk_level || 'LOW'} size="medium" />
+              <span style={{ fontSize: '1.5rem' }}>
+                {riskSummary?.max_risk_level === 'CRITICAL' ? '🚨' :
+                  riskSummary?.max_risk_level === 'HIGH' ? '⚠️' :
+                    riskSummary?.max_risk_level === 'MEDIUM' ? '📋' : '✓'}
+              </span>
             </div>
           </div>
         )}
 
-        {/* Navigation / Steps */}
+        {/* Navigation / Tabs */}
         <div style={{ flex: 1 }}>
           <div className="text-xs text-muted" style={{ fontWeight: 600, marginBottom: '0.75rem', textTransform: 'uppercase' }}>
-            Checklist
+            Menu
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <div className={`btn ${hasReport ? 'btn-ghost' : 'btn-primary'}`} style={{ justifyContent: 'flex-start', opacity: hasReport ? 0.8 : 1 }}>
-               <span style={{ marginRight: '0.5rem' }}>{hasReport ? '✅' : '1️⃣'}</span>
-               Import Records
-            </div>
-            <div className={`btn ${hasReport ? 'btn-primary' : 'btn-ghost'}`} style={{ justifyContent: 'flex-start', opacity: hasReport ? 1 : 0.5 }}>
-               <span style={{ marginRight: '0.5rem' }}>{hasReport ? '2️⃣' : '🔒'}</span>
-               Chat Assistant
-            </div>
+
+            {/* File Management Tab */}
+            <button
+              className={`btn ${activeTab === 'files' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ justifyContent: 'flex-start' }}
+              onClick={() => setActiveTab('files')}
+            >
+              <span style={{ marginRight: '0.5rem' }}>📂</span>
+              Medical Records
+            </button>
+
+            {/* Chat Assistant Tab */}
+            <button
+              className={`btn ${activeTab === 'chat' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ justifyContent: 'flex-start', opacity: hasReport ? 1 : 0.5, cursor: hasReport ? 'pointer' : 'not-allowed' }}
+              onClick={() => hasReport && setActiveTab('chat')}
+              disabled={!hasReport}
+              title={!hasReport ? "Upload reports first to unlock chat" : "Open Chat Assistant"}
+            >
+              <span style={{ marginRight: '0.5rem' }}>💬</span>
+              Chat Assistant
+              {!hasReport && <span style={{ marginLeft: 'auto', fontSize: '12px' }}>🔒</span>}
+            </button>
+
           </div>
         </div>
 
@@ -136,51 +172,52 @@ const PatientDashboard = () => {
         </div>
       </aside>
 
-      {/* Main Content Area - Chat First */}
+      {/* Main Content Area */}
       <main className="main-content">
-        
+
         {/* Mobile Header Toggle */}
         <div className="d-md-none" style={{ padding: '1rem', borderBottom: '1px solid var(--pk-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-           <span className="text-lg font-bold">Medical Assistant</span>
-           <button className="btn btn-ghost" onClick={() => setSidebarOpen(!sidebarOpen)}>☰</button>
+          <span className="text-lg font-bold">Medical Assistant</span>
+          <button className="btn btn-ghost" onClick={() => setSidebarOpen(!sidebarOpen)}>☰</button>
         </div>
 
         {/* Disclaimer Banner */}
-         <div style={{ padding: '0.5rem 1rem', background: 'var(--pk-risk-medium-bg)', borderBottom: '1px solid var(--pk-risk-medium-border)', textAlign: 'center', fontSize: '0.8rem', color: 'var(--pk-risk-medium-text)' }}>
-             ⚠️ AI Monitor - For educational purposes only. Call emergency services in a crisis.
-         </div>
+        <div style={{ padding: '0.5rem 1rem', background: 'var(--pk-risk-medium-bg)', borderBottom: '1px solid var(--pk-risk-medium-border)', textAlign: 'center', fontSize: '0.8rem', color: 'var(--pk-risk-medium-text)' }}>
+          ⚠️ AI Monitor - For educational purposes only. Call emergency services in a crisis.
+        </div>
 
         {/* Content Body */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {hasReport ? (
-             /* Chat takes full remaining height */
-             <ChatBox patientId={patientId} />
-          ) : (
-             /* Empty State / Upload Gate */
-             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
-                <div style={{ maxWidth: '500px', width: '100%' }}>
-                   <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                      <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>📂</div>
-                      <h2 className="text-xl" style={{ marginBottom: '0.5rem' }}>Upload Medical Records</h2>
-                      <p className="text-muted">To ensure the AI gives safe and relevant monitoring advice, please upload your hospital discharge or medical report PDF.</p>
-                   </div>
-                   
-                   <div className="card">
-                      <ReportUploadComponent 
-                        patientId={patientId} 
-                        onReportUploaded={handleReportUploaded}
-                      />
-                   </div>
-                </div>
-             </div>
+
+          {/* View: Chat Assistant */}
+          {activeTab === 'chat' && hasReport && (
+            <ChatBox patientId={patientId} />
           )}
+
+          {/* View: File Management */}
+          {activeTab === 'files' && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '2rem', overflowY: 'auto' }}>
+              <div style={{ maxWidth: '800px', width: '100%', margin: '0 auto' }}>
+                <div style={{ marginBottom: '2rem' }}>
+                  <h2 className="text-xl" style={{ marginBottom: '0.5rem' }}>Manage Records</h2>
+                  <p className="text-muted">Upload and manage your medical documents here. The AI uses these to understand your health context.</p>
+                </div>
+
+                <ReportUploadComponent
+                  patientId={patientId}
+                  onReportUploaded={handleReportUploaded}
+                />
+              </div>
+            </div>
+          )}
+
         </div>
 
       </main>
 
       {/* Overlay for mobile sidebar */}
       {sidebarOpen && (
-        <div 
+        <div
           onClick={() => setSidebarOpen(false)}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 40 }}
         />

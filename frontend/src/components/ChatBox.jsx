@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import MessageBubble from './MessageBubble';
-import { sendChatMessage, getChatHistory } from '../api/api';
+import { sendChatMessage, getChatHistory, clearChatHistory } from '../api/api';
 
 const ChatBox = ({ patientId }) => {
   const [messages, setMessages] = useState([]);
@@ -68,6 +68,21 @@ const ChatBox = ({ patientId }) => {
       setMessages(formattedMessages);
     } catch (err) {
       console.error('Failed to load history:', err);
+    }
+  };
+
+  const handleClearChat = async () => {
+    if (window.confirm('Start a fresh check-in? This will clear your current conversation history.')) {
+      try {
+        setLoading(true);
+        await clearChatHistory(patientId);
+        setMessages([]);
+        setError(null);
+      } catch (err) {
+        setError('Failed to clear chat history');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -228,8 +243,35 @@ const ChatBox = ({ patientId }) => {
     transition: 'all 0.3s',
   };
 
+  const clearButtonStyle = {
+    position: 'absolute',
+    top: '12px',
+    right: '24px',
+    zIndex: 10,
+    padding: '6px 12px',
+    backgroundColor: 'transparent',
+    color: theme.textSecondary,
+    border: `1px solid ${theme.border}`,
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    opacity: 0.6,
+    transition: 'opacity 0.2s',
+  };
+
   return (
     <div style={containerStyle}>
+      {messages.length > 0 && (
+        <button
+          style={clearButtonStyle}
+          onClick={handleClearChat}
+          title="Clear conversation history"
+          onMouseEnter={(e) => e.target.style.opacity = '1'}
+          onMouseLeave={(e) => e.target.style.opacity = '0.6'}
+        >
+          Restart Check-in ↻
+        </button>
+      )}
       <div style={messagesStyle} onScroll={handleScroll} ref={messagesContainerRef}>
         {messages.length === 0 && (
           <div style={emptyStateStyle}>

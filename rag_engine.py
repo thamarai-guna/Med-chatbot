@@ -8,6 +8,7 @@ import json
 import requests
 from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
+from datetime import datetime
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from patient_manager import get_patient_manager
@@ -69,9 +70,51 @@ class RAGEngine:
                 }
                 for h in history
             ]
+            
+            # Restore question count for TODAY's session
+            # We count how many questions the assistant has already asked today
+            today = datetime.utcnow().date()
+            self.question_count = 0
+            
+            for h in self.chat_history:
+                try:
+                    # Parse timestamp (SQLite default is "YYYY-MM-DD HH:MM:SS" which might not start with 'T')
+                    ts_str = h["timestamp"]
+                    if 'T' in ts_str:
+                        msg_time = datetime.fromisoformat(ts_str).date()
+                    else:
+                        # Handle SQLite default format "YYYY-MM-DD HH:MM:SS"
+                        msg_time = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S").date()
+                    
+                    if msg_time == today:
+                        # Assuming each history entry represents one Q&A pair (one question asked)
+                        self.question_count += 1
+                except Exception as e:
+                    print(f"Error parsing timestamp {h.get('timestamp')}: {e}")
+                    pass
+            
+            print(f"[RAG] Patient {self.patient_id} History Length: {len(self.chat_history)}")     
+            print(f"[RAG] Restored question count from history: {self.question_count}")
+            print(f"[RAG] Today is: {today}")
+            
+            # FORCE RESET FOR DEBUGGING
+            # self.question_count = 0  <-- Actually, let's keep the logic but log it loudly.
+            
         except Exception as e:
             print(f"Warning: Could not load patient history: {e}")
             self.chat_history = []
+            self.question_count = 0
+    
+    def _strip_acknowledgement(self, text: str) -> str:
+        """Helper to remove the standard acknowledgment boilerplate from text using Regex"""
+        import re
+        # Pattern matches "Thank you... check-in." or similar variations
+        pattern = r"^(Thank you.*?check-in\.|Thank you.*?report\.)\s*"
+        return re.sub(pattern, "", text, flags=re.IGNORECASE | re.DOTALL).strip()
+
+
+
+
     
     def _load_dual_vector_stores(self):
         """
@@ -403,6 +446,8 @@ Remember: Be CONSERVATIVE. Use HIGH only if clearly justified."""
                 source_documents = context_docs
                 context = "\n\n".join(context_docs[:6])
             
+            print(f"DEBUG CONTEXT: {context[:200]}...")  # Log first 200 chars of context
+            
             # Pre-upload guard: if no patient-specific vector store, require upload
             if self.patient_retriever is None:
                 upload_msg = "To begin today’s check-in, please upload your medical reports using the **Upload Medical Reports** section above."
@@ -420,8 +465,8 @@ Remember: Be CONSERVATIVE. Use HIGH only if clearly justified."""
             history_context = ""
             if self.chat_history:
                 history_context = "\n".join([
-                    f"User: {h['question']}\nAssistant: {h['answer']}"
-                    for h in self.chat_history[-2:]  # Last 2 exchanges
+                    f"User: {h['question']}\nAssistant: {self._strip_acknowledgement(h['answer'])}"
+                    for h in self.chat_history[-3:]  # INCREASE CONTEXT to 3 to help model see flow
                 ])
                 history_context = f"\n\nPrevious conversation:\n{history_context}\n\n"
             
@@ -436,40 +481,66 @@ You are NOT a general chatbot. You operate ONLY inside a fixed Patient Dashboard
 MANDATORY FLOW (STRICT):
 1) Login completed
 2) Patient identified
-3) Medical report upload REQUIRED
-4) Only after upload → start asking questions
+3) Medical reports are CONFIRMED uploaded
+4) Start asking questions immediately
 5) Risk assessment after questioning
 
-PRE-UPLOAD BEHAVIOR (CRITICAL):
-- If reports are NOT uploaded: do NOT ask questions; respond ONLY with: "To begin today’s check-in, please upload your medical reports using the **Upload Medical Reports** section above." Do not add anything else.
+--------------------------------
+RULE 1: NO FLOW RESET
+--------------------------------
+If checkin_status = IN_PROGRESS (meaning history shows previous questions):
+- DO NOT restart the check-in
+- DO NOT say "Thank you. I’ve reviewed your medical report."
+- DO NOT repeat upload instructions
+- DO NOT reset question numbering
+- DO NOT ask previously asked questions
 
-POST-UPLOAD TRIGGER:
-- Once reports exist and are processed: respond first with "Thank you. I’ve reviewed your medical report. Let’s begin today’s check-in." then immediately ask the first symptom question.
+--------------------------------
+RULE 2: UPLOAD GATING (ALREADY HANDLED BY SYSTEM)
+--------------------------------
+(Medical report upload is confirmed before you are called. Do not ask for uploads.)
 
-DOCUMENT SOURCES:
-- SOURCE A (Shared neurology books/guidelines in vector DB) → ONLY for medical reasoning via RAG
-- SOURCE B (Patient reports: condition, symptoms, meds, risk factors) → NOT medical knowledge; use only for context
-
-YOUR ROLE:
-1) Ask DAILY symptom questions after reports are uploaded
-2) Adapt questions using patient report context + previous answers + retrieved guidance
-3) Assess patient risk (LOW/MEDIUM/HIGH)
-4) Provide safe next-step actions
-
-QUESTION RULES (STRICT):
-- One question at a time (exactly one line), simple language
-- Focus ONLY on brain-related symptoms
-- Areas: Speech/confusion, Headache/pain, Dizziness/balance, Weakness/numbness, Vision, Seizures (if mentioned), Medications, Daily functioning
-- Allowed answer types: YES/NO OR numeric (0-10) OR short text (10-15 words; only for pain location or new symptoms)
+--------------------------------
+RULE 3: QUESTION PROGRESSION
+--------------------------------
+- Briefly acknowledge the patient's answer (e.g., "I understand," or "Noted.")
+- Then ask ONLY the NEXT question
 - Question number: {self.question_count + 1}/{self.max_questions_per_session}
-- Limits: MIN 3, MAX 6 questions. Never exceed 6. Stop early if stable.
+- Example format: "Noted. 2/6: Are you experiencing dizziness or balance problems today?"
 
-FOLLOW-UP RULES:
-- Ask a follow-up ONLY if patient answers YES or symptom worsens
-- Only ONE follow-up per symptom; follow all rules above
+--------------------------------
+RULE 4: ANSWER HANDLING
+--------------------------------
+- Review patient answer
+- Ask at most ONE follow-up if answer is YES or worsening
+- Then move forward to next topic
+
+--------------------------------
+RULE 5: COMPLETION
+--------------------------------
+If {self.question_count + 1} > {self.max_questions_per_session}:
+- Stop asking questions
+- Generate Risk Level, Reason, Action (JSON)
+- Say: "Thank you. That’s all for today’s check-in."
+
+--------------------------------
+RULE 6: NO QUESTION DUPLICATION
+--------------------------------
+- Check previously asked questions in history
+- NEVER ask the same question twice
+- NEVER paraphrase previously asked questions
+
+--------------------------------
+STRICT PROHIBITIONS
+--------------------------------
+You must NEVER:
+- Restart from question 1
+- Repeat confirmation messages
+- Ask upload instructions
+- Ask questions out of order
 
 ASSESSMENT LOGIC:
-- Combine patient answers + patient report context + retrieved neurology guidance
+- Combine patient answer + report context + retrieved guidance
 - Analyze severity, trends, combinations
 
 FINAL RESPONSE FORMAT (STRICT JSON when ready):
@@ -479,31 +550,21 @@ FINAL RESPONSE FORMAT (STRICT JSON when ready):
     "action": "specific action text"
 }}
 
-REASON RULES:
-- 1-3 bullets, simple language, no diagnosis, no jargon, no sources
-
-ACTION RULES (STRICT):
-- HIGH: Visit doctor/hospital immediately; contact caregiver; no medication advice.
-- MEDIUM: Continue prescribed medicines; rest and monitor; no new meds or dosage changes.
-- LOW: Reassure; continue normal routine and prescribed meds.
-
 SAFETY RULES:
-- Do NOT diagnose; do NOT prescribe/change meds; do NOT replace a doctor; prioritize safety
-
-TONE: Calm, Supportive, Clear, Patient-friendly
+- Do NOT diagnose; do NOT prescribe/change meds; do NOT replace a doctor
 
 Retrieved medical context:
 {context[:1000]}
 
 {history_context}
 
-If reports are missing: reply with "To begin today’s check-in, please upload your medical reports using the **Upload Medical Reports** section above." If this is the first question after upload, start with "Thank you. I’ve reviewed your medical report. Let’s begin today’s check-in." then ask the question. If you have enough info (≥3 questions or at max limit), return the JSON assessment instead of another question."""
+Start directly with the NEXT question. If you have enough info (≥3 questions or at max limit), return the JSON assessment."""
             
             # Call Groq API
             answer = self._call_groq(prompt)
 
             # Guarantee post-upload acknowledgement on the very first question
-            # Only when patient records exist, it's the first question, and no JSON assessment was returned
+            # Only when patient records exist, it's the first question of the day, and no JSON assessment was returned
             if self.patient_retriever is not None and self.question_count == 0:
                 lower = answer.lower()
                 has_assessment = ("risk_level" in lower and "reason" in lower and "action" in lower)
@@ -583,8 +644,12 @@ If reports are missing: reply with "To begin today’s check-in, please upload y
                 source_documents=source_documents
             )
             
+            # NUCLEAR FIX: Strip acknowledgement from the FINAL ANSWER to be returned
+            # This ensures the user NEVER sees it, even if LLM generates it
+            final_answer = self._strip_acknowledgement(answer)
+            
             return {
-                "answer": answer,
+                "answer": final_answer,
                 "risk_level": risk_level,
                 "risk_reason": risk_reason,  # Convert back to string for API compatibility
                 "reason": risk_assessment.get("reason", []),  # Include array for reference

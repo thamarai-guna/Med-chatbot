@@ -52,6 +52,7 @@ class PatientManager:
                 risk_level TEXT,
                 risk_reason TEXT,
                 source_documents TEXT,
+                action TEXT,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (patient_id) REFERENCES patients(patient_id) ON DELETE CASCADE
             )
@@ -162,7 +163,8 @@ class PatientManager:
         ]
     
     def save_chat_message(self, patient_id: str, question: str, answer: str, 
-                         risk_level: str, risk_reason: str, source_documents: List[str] = None) -> bool:
+                         risk_level: str, risk_reason: str, source_documents: List[str] = None,
+                         action: str = None) -> bool:
         """
         Save chat message to patient history
         
@@ -173,6 +175,7 @@ class PatientManager:
             risk_level: Medical risk level
             risk_reason: Risk explanation
             source_documents: List of source documents
+            action: Recommended action
             
         Returns:
             Success status
@@ -185,13 +188,19 @@ class PatientManager:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
+            # Migration check: Add action column if it doesn't exist
+            try:
+                cursor.execute('ALTER TABLE chat_history ADD COLUMN action TEXT')
+            except sqlite3.OperationalError:
+                pass # Column already exists
+            
             docs_json = json.dumps(source_documents or [])
             
             cursor.execute('''
                 INSERT INTO chat_history 
-                (patient_id, question, answer, risk_level, risk_reason, source_documents)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (patient_id, question, answer, risk_level, risk_reason, docs_json))
+                (patient_id, question, answer, risk_level, risk_reason, source_documents, action)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (patient_id, question, answer, risk_level, risk_reason, docs_json, action))
             
             # Update last_accessed timestamp
             cursor.execute('UPDATE patients SET last_accessed = CURRENT_TIMESTAMP WHERE patient_id = ?', 
@@ -218,8 +227,14 @@ class PatientManager:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
+        # Migration check: Add action column if it doesn't exist
+        try:
+            cursor.execute('ALTER TABLE chat_history ADD COLUMN action TEXT')
+        except sqlite3.OperationalError:
+            pass # Column already exists
+        
         cursor.execute('''
-            SELECT id, question, answer, risk_level, risk_reason, source_documents, timestamp
+            SELECT id, question, answer, risk_level, risk_reason, source_documents, timestamp, action
             FROM chat_history
             WHERE patient_id = ?
             ORDER BY timestamp DESC
@@ -237,7 +252,8 @@ class PatientManager:
                 "risk_level": row[3],
                 "risk_reason": row[4],
                 "source_documents": json.loads(row[5]) if row[5] else [],
-                "timestamp": row[6]
+                "timestamp": row[6],
+                "action": row[7] if len(row) > 7 else None
             }
             for row in reversed(rows)  # Return in chronological order
         ]

@@ -61,6 +61,7 @@ const ChatBox = ({ patientId }) => {
           isUser: false,
           risk_level: item.risk_level,
           risk_reason: item.risk_reason,
+          action: item.action,
           source_documents: item.source_documents,
           timestamp: item.timestamp,
         });
@@ -108,6 +109,7 @@ const ChatBox = ({ patientId }) => {
         isUser: false,
         risk_level: response.risk_level,
         risk_reason: response.risk_reason,
+        action: response.action,
         source_documents: response.source_documents,
         timestamp: response.timestamp,
       };

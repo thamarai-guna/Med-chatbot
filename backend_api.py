@@ -8,13 +8,83 @@ The Streamlit app is a prototype for reference.
 """
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import os
 import sys
+
+# DISABLE PROGRESS BARS causing Unicode errors (tqdm, huggingface)
+os.environ["TQDM_DISABLE"] = "1"
+os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+
+# FORCE UTF-8 ENCODING FOR WINDOWS CONSOLE to prevent emojis from crashing apps
+# Custom wrapper if reconfigure fails or library bypasses it
+class SafeStream:
+    def __init__(self, stream):
+        self.stream = stream
+        self.encoding = getattr(stream, 'encoding', 'utf-8') or 'utf-8'
+
+    def write(self, data):
+        try:
+            self.stream.write(data)
+        except UnicodeEncodeError:
+            # Fallback: encode to ascii with replacement, then decode
+            try:
+                safe_data = data.encode('ascii', 'replace').decode('ascii')
+                self.stream.write(safe_data)
+            except Exception:
+                pass # Give up writing this chunk
+
+    def flush(self):
+        try:
+            self.stream.flush()
+        except Exception:
+            pass
+
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        # Wrap streams if reconfigure not available or fails to stop errors
+        sys.stdout = SafeStream(sys.stdout)
+        sys.stderr = SafeStream(sys.stderr)
+    
+    # Also wrap them anyway to be safe against libraries that print weird stuff
+    # Only wrap if not already wrapped (simple check)
+    if not isinstance(sys.stdout, SafeStream):
+        sys.stdout = SafeStream(sys.stdout)
+    if not isinstance(sys.stderr, SafeStream):
+        sys.stderr = SafeStream(sys.stderr)
+        
+    # CRITICAL: Patch existing logging handlers (like Uvicorn's) that hold references to old streams
+    import logging
+    def patch_logging_handlers():
+        # Patch root logger
+        for handler in logging.root.handlers:
+            if hasattr(handler, 'stream') and hasattr(handler.stream, 'write'):
+                if not isinstance(handler.stream, SafeStream):
+                    handler.stream = SafeStream(handler.stream)
+        
+        # Patch all other loggers
+        for logger in logging.Logger.manager.loggerDict.values():
+            if isinstance(logger, logging.Logger):
+                for handler in logger.handlers:
+                    if hasattr(handler, 'stream') and hasattr(handler.stream, 'write'):
+                        if not isinstance(handler.stream, SafeStream):
+                            try:
+                                handler.stream = SafeStream(handler.stream)
+                            except:
+                                pass # Some streams might be immutable/special
+
+    patch_logging_handlers()
+    
+    # Silence problematic libraries explicitly
+    logging.getLogger('sentence_transformers').setLevel(logging.ERROR)
+    logging.getLogger('transformers').setLevel(logging.ERROR)
 
 # Add parent directory to path to import existing modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -37,8 +107,8 @@ from report_upload_engine import get_upload_handler
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Medical Chatbot API",
-    description="Headless backend for hospital medical chatbot",
+    title="Care Sense AI API",
+    description="Headless backend for hospital Care Sense AI",
     version="1.0.0"
 )
 
@@ -50,6 +120,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/")
+def health_check():
+    return {"status": "ok", "service": "Care Sense AI API"}
 
 # ============================================================================
 # SESSION STORAGE FOR CLINICAL MONITORING
@@ -81,6 +155,7 @@ class ChatQueryResponse(BaseModel):
     answer: str
     risk_level: str
     risk_reason: str
+    action: Optional[str] = None
     source_documents: List[str]
     timestamp: str
 
@@ -109,6 +184,7 @@ class ChatHistoryResponse(BaseModel):
     answer: str
     risk_level: str
     risk_reason: str
+    action: Optional[str] = None
     source_documents: List[str]
     timestamp: str
 
@@ -385,6 +461,7 @@ async def chat_query(request: ChatQueryRequest):
             answer=response["answer"],
             risk_level=response["risk_level"],
             risk_reason=response["risk_reason"],
+            action=response.get("action"),
             source_documents=response["source_documents"],
             timestamp=datetime.now().isoformat()
         )
@@ -392,6 +469,36 @@ async def chat_query(request: ChatQueryRequest):
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/chat/stream")
+async def stream_chat_response(patient_id: str, message: str):
+    """
+    Stream chat response for a given patient and message
+    """
+    try:
+        # Validate patient exists
+        pm = get_patient_manager()
+        patient = pm.get_patient(patient_id)
+        if not patient:
+            raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
+        
+        # Initialize RAG engine
+        rag_engine = RAGEngine(
+            patient_id=patient_id,
+            max_tokens=500,
+            temperature=0.7
+        )
+        
+        return StreamingResponse(
+            rag_engine.answer_question_stream(message),
+            media_type="text/event-stream"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Streaming error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/chat/history/{patient_id}")
@@ -415,6 +522,7 @@ async def get_chat_history(patient_id: str, limit: int = 50):
                     answer=h["answer"],
                     risk_level=h["risk_level"],
                     risk_reason=h["risk_reason"],
+                    action=h.get("action"),
                     source_documents=h["source_documents"],
                     timestamp=h["timestamp"]
                 )

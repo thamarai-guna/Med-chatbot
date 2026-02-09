@@ -86,8 +86,8 @@ def create_question_generation_prompt(
         for i, qa in enumerate(previous_answers.get('answered_questions', []))
     ) if previous_answers.get('answered_questions') else "No previous answers yet."
     
-    prompt = f"""You are assisting with neurological symptom monitoring.
-
+    prompt = f"""You are assisting with specialized neurological symptom monitoring.
+    
 PATIENT CONTEXT:
 Medical History: {patient_history}
 
@@ -99,17 +99,18 @@ PREVIOUS RESPONSES:
 
 QUESTION {current_question_number} OF {max_questions}:
 Generate the next monitoring question following these rules:
-1. Ask about a neurological symptom NOT previously asked
-2. Choose appropriate answer type (YES_NO, SCALE_0_10, or SHORT_TEXT)
-3. Make it specific and measurable
-4. Use simple, patient-friendly language
-5. Build on previous answers if relevant
+1. Ask about a NEUROLOGICAL symptom NOT previously asked (e.g., headache, dizziness, numbness, vision changes, coordination).
+2. If the patient reports non-neurological symptoms, redirect or check for neurological complications.
+3. Choose appropriate answer type (YES_NO, SCALE_0_10, or SHORT_TEXT)
+4. Make it specific and measurable
+5. Use simple, patient-friendly language
+6. Build on previous answers if relevant
 
 Return ONLY valid JSON:
 {{
     "question": "Your question here",
     "answer_type": "YES_NO or SCALE_0_10 or SHORT_TEXT",
-    "explanation": "Why we're asking this based on context"
+    "explanation": "Why we're asking this based on NEUROLOGICAL context"
 }}"""
     
     return prompt

@@ -19,6 +19,14 @@ from patient_manager import get_patient_manager
 
 load_dotenv()
 
+import contextlib
+@contextlib.contextmanager
+def silence_output():
+    """Context manager to suppress stdout and stderr to prevent UnicodeEncodeError on Windows"""
+    with open(os.devnull, "w", encoding='utf-8') as devnull:
+        with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+            yield
+
 
 class RAGEngine:
     """
@@ -46,7 +54,7 @@ class RAGEngine:
         self.patient_retriever = None
         self.patient_manager = get_patient_manager()
         self.question_count = 0  # Track questions in current session
-        self.max_questions_per_session = 6  # Enforce maximum (per latest spec)
+        self.max_questions_per_session = 5  # Enforce maximum (user requested 5)
         
         # --- Configure Multi-Provider Fallback ---
         
@@ -138,6 +146,8 @@ class RAGEngine:
 
 
     
+
+
     def _load_dual_vector_stores(self):
         """
         Load TWO vector stores:
@@ -145,38 +155,46 @@ class RAGEngine:
         2. Patient-specific medical records (private, per-patient)
         """
         try:
-            instructor_embeddings = HuggingFaceEmbeddings(
-                model_name="sentence-transformers/all-MiniLM-L6-v2", 
-                model_kwargs={'device': 'cpu'}
-            )
-            
-            # Load shared medical books vector store (ALWAYS AVAILABLE)
-            shared_path = "vector store/shared"
-            if os.path.exists(shared_path):
-                shared_db = FAISS.load_local(
-                    shared_path,
-                    instructor_embeddings,
-                    allow_dangerous_deserialization=True
+            with silence_output():
+                instructor_embeddings = HuggingFaceEmbeddings(
+                    model_name="sentence-transformers/all-MiniLM-L6-v2", 
+                    model_kwargs={'device': 'cpu'}
                 )
-                self.shared_retriever = shared_db.as_retriever(search_kwargs={"k": 3})
-                print(f"✅ Loaded shared medical books vector store")
-            else:
-                print(f"⚠️ Shared medical books vector store not found at {shared_path}")
-                self.shared_retriever = None
+                
+                # Load shared medical books vector store (ALWAYS AVAILABLE)
+                shared_path = "vector store/shared"
+                if os.path.exists(shared_path):
+                    shared_db = FAISS.load_local(
+                        shared_path,
+                        instructor_embeddings,
+                        allow_dangerous_deserialization=True
+                    )
+                    self.shared_retriever = shared_db.as_retriever(search_kwargs={"k": 3})
+                else:
+                    self.shared_retriever = None
+                
+                # Load patient-specific vector store (IF EXISTS)
+                patient_path = f"vector store/patient_{self.patient_id}"
+                if os.path.exists(patient_path):
+                    patient_db = FAISS.load_local(
+                        patient_path,
+                        instructor_embeddings,
+                        allow_dangerous_deserialization=True
+                    )
+                    self.patient_retriever = patient_db.as_retriever(search_kwargs={"k": 3})
+                else:
+                    self.patient_retriever = None
             
-            # Load patient-specific vector store (IF EXISTS)
-            patient_path = f"vector store/patient_{self.patient_id}"
-            if os.path.exists(patient_path):
-                patient_db = FAISS.load_local(
-                    patient_path,
-                    instructor_embeddings,
-                    allow_dangerous_deserialization=True
-                )
-                self.patient_retriever = patient_db.as_retriever(search_kwargs={"k": 3})
-                print(f"✅ Loaded patient-specific medical records for {self.patient_id}")
+            # Print status safely (outside silenced block)
+            if self.shared_retriever:
+                print(f"[INFO] Loaded shared medical books")
             else:
-                print(f"ℹ️ No patient-specific medical records found for {self.patient_id}")
-                self.patient_retriever = None
+                print(f"[WARN] Shared vector store not found")
+                
+            if self.patient_retriever:
+                print(f"[INFO] Loaded patient records for {self.patient_id}")
+            else:
+                print(f"[INFO] No patient records for {self.patient_id}")
             
             # At least one retriever must be available
             if not self.shared_retriever and not self.patient_retriever:
@@ -203,7 +221,7 @@ class RAGEngine:
                 return response.choices[0].message.content.strip()
             except Exception as e:
                 errors.append(f"DeepSeek Error: {e}")
-                print(f"⚠️ DeepSeek failed: {e}. Trying Groq...")
+                print(f"[WARN] DeepSeek failed: {e}. Trying Groq...")
 
         # 2. Try Groq (Secondary)
         if self.groq_client:
@@ -217,7 +235,7 @@ class RAGEngine:
                 return response.choices[0].message.content.strip()
             except Exception as e:
                 errors.append(f"Groq Error: {e}")
-                print(f"⚠️ Groq failed: {e}. Trying Gemini...")
+                print(f"[WARN] Groq failed: {e}. Trying Gemini...")
 
         # 3. Try Gemini (Tertiary)
         if self.gemini_model:
@@ -230,11 +248,223 @@ class RAGEngine:
                 return response.text.strip()
             except Exception as e:
                 errors.append(f"Gemini Error: {e}")
-                print(f"⚠️ Gemini failed: {e}.")
+                print(f"[WARN] Gemini failed: {e}.")
 
         return f"Error: All LLM providers failed. Details: {'; '.join(errors)}"
 
-    def _call_llm_with_fallback_json(self, system_prompt: str, user_prompt: str) -> str:
+    def _call_llm_with_fallback_stream(self, prompt: str):
+        """
+        Stream from LLM providers in order: DeepSeek -> Groq -> Gemini
+        Yields chunk text
+        """
+        # 1. Try DeepSeek (Primary)
+        if self.deepseek_client:
+            try:
+                # We only try to initialize stream. If it works, we assume connection is good.
+                stream = self.deepseek_client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                    stream=True
+                )
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+                return # Success, stop
+            except Exception as e:
+                print(f"[WARN] DeepSeek stream failed: {e}. Trying Groq...")
+        
+        # 2. Try Groq (Secondary)
+        if self.groq_client:
+            try:
+                stream = self.groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                    stream=True
+                )
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+                return # Success
+            except Exception as e:
+                print(f"[WARN] Groq stream failed: {e}. Trying Gemini...")
+
+        # 3. Try Gemini (Tertiary)
+        if self.gemini_model:
+            try:
+                # Gemini streaming is slightly different
+                response = self.gemini_model.generate_content(prompt, stream=True)
+                for chunk in response:
+                    if chunk.text:
+                        yield chunk.text
+                return
+            except Exception as e:
+                print(f"[WARN] Gemini stream failed: {e}.")
+
+        yield "Error: All LLM providers failed to stream."
+
+    def answer_question_stream(self, question: str, context_docs: Optional[List[str]] = None):
+        """
+        Generator yielding chunks of the answer.
+        Buffers full answer to process risk assessment at the end.
+        """
+        # 1. Retrieve & Prepare Context (BLOCKING)
+        if context_docs is None:
+            source_documents = []
+            if self.shared_retriever:
+                shared_docs = self.shared_retriever.invoke(question)
+                source_documents.extend([doc.page_content for doc in shared_docs])
+            if self.patient_retriever:
+                patient_docs = self.patient_retriever.invoke(question)
+                source_documents.extend([doc.page_content for doc in patient_docs])
+            
+            if not source_documents:
+                yield "Error: No medical knowledge sources available"
+                return
+
+            context = "\n\n".join(source_documents[:6])
+        else:
+            source_documents = context_docs
+            context = "\n\n".join(context_docs[:6])
+
+        # Pre-upload check (Blocking first chunk)
+        if self.patient_retriever is None:
+            yield "To begin today’s check-in, please upload your medical reports using the **Upload Medical Reports** section above."
+            return
+
+        # Build prompt
+        history_context = ""
+        if self.chat_history:
+            history_context = "\n".join([
+                f"User: {h['question']}\nAssistant: {self._strip_acknowledgement(h['answer'])}"
+                for h in self.chat_history[-3:]
+            ])
+            history_context = f"\n\nPrevious conversation:\n{history_context}\n\n"
+
+        prompt = f"""You are a specialized Neurological Medical Assistant designed for post-discharge patient monitoring.
+
+Your task is to assess the patient's neurological health status based on a short interaction.
+
+RULES:
+1. Ask a maximum of {self.max_questions_per_session} simple, yes/no or scale-based questions.
+2. Questions must be short, clear, and STRICTLY RELATED to the patient's neurological condition (e.g., headache, vision, balance, confusion, weakness, numbness).
+3. If the user reports general symptoms (fever, cough, etc.), acknowledge them but IMMEDIATELY ask if they are experiencing any associated neurological symptoms (e.g., "Do you have a stiff neck or headache with that fever?").
+4. NOT ask follow-up questions beyond the limit.
+5. After collecting answers, produce the final assessment in the specified format.
+6. Do NOT include explanations outside the format.
+7. Do NOT provide medical diagnosis—only risk assessment and guidance.
+
+CONTEXT:
+Current Question Number: {self.question_count + 1}/{self.max_questions_per_session}
+
+MANDATORY SYSTEM RULES (Hidden):
+- If {self.question_count + 1} <= {self.max_questions_per_session}: Ask the next question.
+- If {self.question_count + 1} > {self.max_questions_per_session}: Stop asking and provide the FINAL OUTPUT.
+
+FINAL OUTPUT FORMAT (User Visible):
+
+Risk Level: <Low / Medium / High>
+
+Action:
+- <Clear next step the patient should take>
+
+Reason:
+- <Brief justification based on the patient's responses, emphasizing neurological context>
+
+
+IMPORTANT FOR SYSTEM INTEGRATION (Backend Only):
+Regardless of the user-visible output, when you produce the final assessment, you MUST ALSO append a JSON block at the very end of your response (it will be hidden from the user).
+Format:
+{{
+    "risk_level": "LOW|MEDIUM|HIGH",
+    "reason": ["reason 1"],
+    "action": "action text"
+}}
+
+Retrieved medical context (Prioritize NEUROLOGICAL info):
+{context[:1000]}
+
+{history_context}
+
+Start directly with the NEXT question. If you have enough info (>=3 questions or at max limit), return the FINAL OUTPUT (Text + JSON)."""
+
+        full_answer_buffer = ""
+
+        # 2. Stream Response
+        stream_gen = self._call_llm_with_fallback_stream(prompt)
+        
+        # Ack check for first chunk
+        first_chunk = True
+        
+        for chunk in stream_gen:
+            # Special First Chunk Handling for Acknowledgment
+            if first_chunk and self.question_count == 0:
+                 # We can't easily check for assessment in first chunk, so we just prepend acknowledgment if consistent with logic
+                 # But streaming makes prepending weird visually if acknowledgement comes later.
+                 # Strategy: Just yield chunk. We'll rely on frontend or just assume streaming works.
+                 # Actually, let's prepend the Ack to the first chunk if rules match
+                 if self.patient_retriever is not None:
+                     # Check if we should ack? Hard to know if response contains assessment yet.
+                     # Let's emit Ack first as a separate event/chunk
+                     yield "Thank you. I’ve reviewed your medical report. Let’s begin today’s check-in.\n\n"
+                     full_answer_buffer += "Thank you. I’ve reviewed your medical report. Let’s begin today’s check-in.\n\n"
+                     first_chunk = False
+            
+            full_answer_buffer += chunk
+            yield chunk
+
+        # 3. Post-Processing (Background logic after stream ends)
+        # We need to save state.
+        # But we are inside a generator. The generator finishes when this loop ends.
+        # So we can do post-processing here!
+        
+        self.question_count += 1
+        
+        risk_assessment = None
+        risk_level = "UNKNOWN"
+        risk_reason = ""
+        action_text = ""
+        
+        # Parse JSON from full buffer
+        import json
+        lower_answer = full_answer_buffer.lower()
+        if "risk_level" in lower_answer:
+            json_start = full_answer_buffer.find('{')
+            json_end = full_answer_buffer.rfind('}') + 1
+            if json_start != -1 and json_end > json_start:
+                try:
+                    json_str = full_answer_buffer[json_start:json_end]
+                    risk_data = json.loads(json_str)
+                    risk_assessment = {
+                        "risk_level": risk_data.get("risk_level", "UNKNOWN").upper(),
+                        "reason": risk_data.get("reason", ["Unable to assess"]),
+                        "action": risk_data.get("action", "Continue monitoring")
+                    }
+                    risk_level = risk_assessment["risk_level"]
+                    action_text = risk_assessment["action"]
+                    
+                    reason_list = risk_assessment["reason"]
+                    if isinstance(reason_list, list) and reason_list:
+                         risk_reason = reason_list[0]
+                    else:
+                         risk_reason = str(risk_assessment.get("action",""))
+                         
+                except:
+                    pass
+
+        # Save to DB
+        self.patient_manager.save_chat_message(
+            patient_id=self.patient_id,
+            question=question,
+            answer=full_answer_buffer, # Note: This includes the hidden JSON. Ideally we strip it before saving or save clean version.
+            risk_level=risk_level,
+            risk_reason=risk_reason,
+            source_documents=source_documents,
+            action=action_text
+        )
         """
         Try LLM providers in order for JSON output
         """
@@ -516,94 +746,53 @@ Remember: Be CONSERVATIVE. Use HIGH only if clearly justified."""
                 history_context = f"\n\nPrevious conversation:\n{history_context}\n\n"
             
             # Create prompt for Groq with combined context
-            prompt = f"""You are an AI assistant for post-discharge neurological monitoring.
+            prompt = f"""You are a specialized Neurological Medical Assistant designed for post-discharge patient monitoring.
 
-You are NOT a general chatbot. You operate ONLY inside a fixed Patient Dashboard UI with three sections:
-1) Upload Your Medical Reports (above chat)
-2) Chat Area (used only after upload)
-3) Daily Check-in Area (questions appear after upload)
+Your task is to assess the patient's neurological health status based on a short interaction.
 
-MANDATORY FLOW (STRICT):
-1) Login completed
-2) Patient identified
-3) Medical reports are CONFIRMED uploaded
-4) Start asking questions immediately
-5) Risk assessment after questioning
+RULES:
+1. Ask a maximum of {self.max_questions_per_session} simple, yes/no or scale-based questions.
+2. Questions must be short, clear, and STRICTLY RELATED to the patient's neurological condition (e.g., headache, vision, balance, confusion, weakness, numbness).
+3. If the user reports general symptoms (fever, cough, etc.), acknowledge them but IMMEDIATELY ask if they are experiencing any associated neurological symptoms (e.g., "Do you have a stiff neck or headache with that fever?").
+4. Do NOT ask follow-up questions beyond the limit.
+5. After collecting answers, produce the final assessment in the specified format.
+6. Do NOT include explanations outside the format.
+7. Do NOT provide medical diagnosis—only risk assessment and guidance.
 
---------------------------------
-RULE 1: NO FLOW RESET
---------------------------------
-If checkin_status = IN_PROGRESS (meaning history shows previous questions):
-- DO NOT restart the check-in
-- DO NOT say "Thank you. I’ve reviewed your medical report."
-- DO NOT repeat upload instructions
-- DO NOT reset question numbering
-- DO NOT ask previously asked questions
+CONTEXT:
+Current Question Number: {self.question_count + 1}/{self.max_questions_per_session}
 
---------------------------------
-RULE 2: UPLOAD GATING (ALREADY HANDLED BY SYSTEM)
---------------------------------
-(Medical report upload is confirmed before you are called. Do not ask for uploads.)
+MANDATORY SYSTEM RULES (Hidden):
+- If {self.question_count + 1} <= {self.max_questions_per_session}: Ask the next question.
+- If {self.question_count + 1} > {self.max_questions_per_session}: Stop asking and provide the FINAL OUTPUT.
 
---------------------------------
-RULE 3: QUESTION PROGRESSION
---------------------------------
-- Briefly acknowledge the patient's answer (e.g., "I understand," or "Noted.")
-- Then ask ONLY the NEXT question
-- Question number: {self.question_count + 1}/{self.max_questions_per_session}
-- Example format: "Noted. 2/6: Are you experiencing dizziness or balance problems today?"
+FINAL OUTPUT FORMAT (User Visible):
 
---------------------------------
-RULE 4: ANSWER HANDLING
---------------------------------
-- Review patient answer
-- Ask at most ONE follow-up if answer is YES or worsening
-- Then move forward to next topic
+Risk Level: <Low / Medium / High>
 
---------------------------------
-RULE 5: COMPLETION
---------------------------------
-If {self.question_count + 1} > {self.max_questions_per_session}:
-- Stop asking questions
-- Generate Risk Level, Reason, Action (JSON)
-- Say: "Thank you. That’s all for today’s check-in."
+Action:
+- <Clear next step the patient should take>
 
---------------------------------
-RULE 6: NO QUESTION DUPLICATION
---------------------------------
-- Check previously asked questions in history
-- NEVER ask the same question twice
-- NEVER paraphrase previously asked questions
+Reason:
+- <Brief justification based on the patient's responses, emphasizing neurological context>
 
---------------------------------
-STRICT PROHIBITIONS
---------------------------------
-You must NEVER:
-- Restart from question 1
-- Repeat confirmation messages
-- Ask upload instructions
-- Ask questions out of order
 
-ASSESSMENT LOGIC:
-- Combine patient answer + report context + retrieved guidance
-- Analyze severity, trends, combinations
-
-FINAL RESPONSE FORMAT (STRICT JSON when ready):
+IMPORTANT FOR SYSTEM INTEGRATION (Backend Only):
+Regardless of the user-visible output, when you produce the final assessment, you MUST ALSO append a JSON block at the very end of your response (it will be hidden from the user).
+Format:
 {{
     "risk_level": "LOW|MEDIUM|HIGH",
-    "reason": ["bullet1", "bullet2"],
-    "action": "specific action text"
+    "reason": ["reason 1"],
+    "action": "action text"
 }}
 
-SAFETY RULES:
-- Do NOT diagnose; do NOT prescribe/change meds; do NOT replace a doctor
-
-Retrieved medical context:
+Retrieved medical context (Prioritize NEUROLOGICAL info):
 {context[:1000]}
 
 {history_context}
 
-Start directly with the NEXT question. If you have enough info (≥3 questions or at max limit), return the JSON assessment."""
+Start directly with the NEXT question. If you have enough info (>=3 questions or at max limit), return the FINAL OUTPUT (Text + JSON)."""
+
             
             # Call LLM with fallback
             answer = self._call_llm_with_fallback(prompt)
@@ -680,18 +869,35 @@ Start directly with the NEXT question. If you have enough info (≥3 questions o
                     "question_count": self.question_count
                 }
 
+            # Extract action for storage
+            action_text = risk_assessment.get("action", "") if risk_assessment else ""
+
             self.patient_manager.save_chat_message(
                 patient_id=self.patient_id,
                 question=question,
                 answer=answer,
                 risk_level=risk_level,
                 risk_reason=risk_reason,
-                source_documents=source_documents
+                source_documents=source_documents,
+                action=action_text
             )
             
-            # NUCLEAR FIX: Strip acknowledgement from the FINAL ANSWER to be returned
-            # This ensures the user NEVER sees it, even if LLM generates it
+            # NUCLEAR FIX: Strip acknowledgement AND hidden JSON from the FINAL ANSWER to be returned
+            # This ensures the user sees ONLY the text format they requested
+            
             final_answer = self._strip_acknowledgement(answer)
+            
+            # Remove the JSON block if present at the end
+            if "{" in final_answer:
+                json_start = final_answer.rfind('{')
+                if json_start != -1:
+                    # Check if this looks like our hidden JSON block (simple heuristic)
+                    possible_json = final_answer[json_start:]
+                    if "risk_level" in possible_json and "}" in possible_json:
+                        final_answer = final_answer[:json_start].strip()
+                        # Clean up any trailing "IMPORTANT..." or "Note:" text if the LLM outputted it before the JSON
+                        if "IMPORTANT FOR SYSTEM INTEGRATION" in final_answer:
+                             final_answer = final_answer.split("IMPORTANT FOR SYSTEM INTEGRATION")[0].strip()
             
             return {
                 "answer": final_answer,

@@ -15,6 +15,7 @@ const Login = () => {
   const [error, setError] = useState(null);
   const navigate = useNavigate();
   const { theme } = useTheme();
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
   const handleLogin = async () => {
     if (!username.trim() || !password.trim()) {
@@ -26,7 +27,7 @@ const Login = () => {
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:8000/api/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -181,7 +182,7 @@ const Login = () => {
         <ThemeToggle />
       </div>
       <div style={cardStyle}>
-        <h1 style={titleStyle}>🏥 Medical Assistant</h1>
+        <h1 style={titleStyle}>🏥 Care Sense AI</h1>
         <p style={subtitleStyle}>Post-Discharge Monitoring System</p>
 
         {error && <div style={errorStyle}>{error}</div>}
@@ -212,13 +213,7 @@ const Login = () => {
           {loading ? 'Logging in...' : 'Login'}
         </button>
 
-        <div style={demoBoxStyle}>
-          <div style={demoLabelStyle}>Demo Credentials:</div>
-          <div>
-            👤 Patient: patient1 / pass123<br/>
-            👨‍⚕️ Doctor: doctor1 / pass123
-          </div>
-        </div>
+
       </div>
     </div>
   );

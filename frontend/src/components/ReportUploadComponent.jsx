@@ -15,6 +15,7 @@ import { useTheme } from '../context/ThemeContext';
 
 const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
   const [reportStatus, setReportStatus] = useState(null);
+  const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
@@ -25,33 +26,71 @@ const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
 
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
-  // Check report status on component mount
+  // Check report status and load documents on component mount
   useEffect(() => {
-    checkReportStatus();
+    refreshData();
   }, [patientId]);
 
-  /**
-   * Check if patient has uploaded medical reports
-   * CRITICAL: This determines if chatbot is enabled
-   */
-  const checkReportStatus = async () => {
+  const refreshData = async () => {
     try {
       setLoading(true);
+      await Promise.all([checkReportStatus(), loadDocuments()]);
+    } catch (err) {
+      console.error('Failed to refresh data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const checkReportStatus = async () => {
+    try {
       const response = await axios.get(
         `${API_BASE_URL}/api/patient/${patientId}/report/status`
       );
       setReportStatus(response.data);
     } catch (err) {
       console.error('Failed to check report status:', err);
-      setUploadError('Failed to check report status. Please try again.');
-    } finally {
+    }
+  };
+
+  const loadDocuments = async () => {
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/api/documents/patient/${patientId}/list`
+      );
+      setDocuments(response.data.documents || []);
+    } catch (err) {
+      console.error('Failed to load documents:', err);
+    }
+  };
+
+  const handleDeleteDocument = async (filename) => {
+    if (!window.confirm(`Are you sure you want to delete ${filename}? This will remove it from the AI's knowledge base.`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await axios.delete(
+        `${API_BASE_URL}/api/documents/patient/${patientId}/${filename}`
+      );
+
+      // Refresh everything
+      await refreshData();
+
+      // Notify parent to update dashboard status
+      if (onReportUploaded) {
+        onReportUploaded();
+      }
+    } catch (err) {
+      console.error('Failed to delete document:', err);
+      setUploadError(`Failed to delete ${filename}`);
       setLoading(false);
     }
   };
 
   /**
    * Upload medical report to backend
-   * Supported formats: PDF, Images (JPG/PNG), Plain Text
    */
   const handleUploadReport = async () => {
     if (!selectedFile) {
@@ -67,7 +106,7 @@ const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
       'image/jpg',
       'text/plain',
     ];
-    
+
     if (!validTypes.includes(selectedFile.type)) {
       setUploadError(
         'Invalid file type. Please upload PDF, Image (JPG/PNG), or Text file.'
@@ -86,15 +125,9 @@ const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
       setUploadError(null);
       setUploadSuccess(null);
 
-      // Debug: Log patientId
-      console.log('Uploading report for patient:', patientId);
-      console.log('File:', selectedFile?.name, 'Size:', selectedFile?.size);
-
       const formData = new FormData();
       formData.append('file', selectedFile);
 
-      // NOTE: Do NOT set Content-Type header - let axios/browser handle it
-      // Setting it manually breaks the multipart boundary
       const response = await axios.post(
         `${API_BASE_URL}/api/patient/${patientId}/upload-report`,
         formData,
@@ -103,293 +136,185 @@ const ReportUploadComponent = ({ patientId, onReportUploaded }) => {
         }
       );
 
-      console.log('Upload response:', response.data);
-
       // Upload successful
       setUploadSuccess(
         `✅ Report uploaded successfully! (${response.data.chunks_count} chunks indexed)`
       );
       setSelectedFile(null);
-      
-      // Refresh report status
-      setTimeout(() => {
-        checkReportStatus();
-        if (onReportUploaded) {
-          onReportUploaded();
-        }
-      }, 1000);
+
+      // Refresh report status and documents
+      await refreshData();
+
+      if (onReportUploaded) {
+        onReportUploaded();
+      }
     } catch (err) {
       console.error('Report upload failed:', err);
-      console.error('Error response:', err.response?.data);
-      console.error('Error status:', err.response?.status);
-      
       let errorMsg = 'Upload failed';
       if (err.response?.data?.detail) {
         errorMsg = err.response.data.detail;
-      } else if (err.response?.status === 400) {
-        errorMsg = 'Bad request - file may be invalid or too large';
-      } else if (err.response?.status === 404) {
-        errorMsg = 'Patient not found';
-      } else if (err.message) {
-        errorMsg = err.message;
       }
-      
       setUploadError(`❌ Upload failed: ${errorMsg}`);
     } finally {
       setUploading(false);
     }
   };
 
+  // Styles
   const containerStyle = {
-    backgroundColor: theme.bgSecondary,
+    backgroundColor: 'var(--pk-bg-secondary)',
     padding: '24px',
     borderRadius: '12px',
-    border: `1px solid ${theme.border}`,
-    boxShadow: `0 2px 8px ${theme.shadow}`,
+    border: '1px solid var(--pk-border)',
     marginBottom: '24px',
-    transition: 'all 0.3s',
-    color: theme.text,
+    color: 'var(--pk-text)',
   };
 
-  const warningStyle = {
-    backgroundColor: theme.riskHigh.bg,
-    border: `1px solid ${theme.riskHigh.border}`,
-    color: theme.riskHigh.text,
+  const statusBannerStyle = (ready) => ({
+    backgroundColor: ready ? 'var(--pk-risk-low-bg)' : 'var(--pk-risk-high-bg)',
+    border: `1px solid ${ready ? 'var(--pk-risk-low-border)' : 'var(--pk-risk-high-border)'}`,
+    color: ready ? 'var(--pk-risk-low-text)' : 'var(--pk-risk-high-text)',
     padding: '12px 16px',
     borderRadius: '8px',
-    marginBottom: '16px',
+    marginBottom: '20px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
     fontSize: '14px',
-    transition: 'all 0.3s',
-  };
-
-  const successStyle = {
-    backgroundColor: theme.riskLow.bg,
-    border: `1px solid ${theme.riskLow.border}`,
-    color: theme.riskLow.text,
-    padding: '12px 16px',
-    borderRadius: '8px',
-    marginBottom: '16px',
-    fontSize: '14px',
-    transition: 'all 0.3s',
-  };
-
-  const errorStyle = {
-    backgroundColor: theme.riskHigh.bg,
-    border: `1px solid ${theme.riskHigh.border}`,
-    color: theme.riskHigh.text,
-    padding: '12px 16px',
-    borderRadius: '8px',
-    marginBottom: '16px',
-    fontSize: '14px',
-    transition: 'all 0.3s',
-  };
-
-  const uploadAreaStyle = {
-    border: `2px dashed ${theme.accent}`,
-    borderRadius: '12px',
-    padding: '32px',
-    textAlign: 'center',
-    backgroundColor: isDark ? theme.bgTertiary : theme.bgSecondary,
-    marginBottom: '16px',
-    cursor: 'pointer',
-    transition: 'all 0.3s ease',
-    color: theme.text,
-  };
-
-  const fileInputStyle = {
-    display: 'none',
-  };
-
-  const buttonStyle = {
-    padding: '10px 20px',
-    backgroundColor: theme.accent,
-    color: '#ffffff',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: uploading ? 'not-allowed' : 'pointer',
-    fontWeight: '600',
-    opacity: uploading ? 0.7 : 1,
-    boxShadow: `0 1px 2px ${theme.shadow}`,
-    transition: 'all 0.2s ease',
-  };
-
-  const statusBadgeStyle = (hasReport) => ({
-    display: 'inline-block',
-    padding: '8px 16px',
-    borderRadius: '20px',
-    fontWeight: '600',
-    fontSize: '14px',
-    backgroundColor: hasReport ? theme.riskLow.bg : theme.riskHigh.bg,
-    color: hasReport ? theme.riskLow.text : theme.riskHigh.text,
-    border: `1px solid ${hasReport ? theme.riskLow.border : theme.riskHigh.border}`,
   });
 
-  // Loading state
-  if (loading) {
-    return (
-      <div style={containerStyle}>
-        <h2 style={{ marginTop: 0 }}>📋 Medical Report Upload</h2>
-        <div style={{ textAlign: 'center', padding: '20px' }}>
-          Loading report status...
-        </div>
-      </div>
-    );
-  }
+  const uploadAreaStyle = {
+    border: '2px dashed var(--pk-accent)',
+    borderRadius: '12px',
+    padding: '24px',
+    textAlign: 'center',
+    backgroundColor: isDark ? 'var(--pk-bg-tertiary)' : 'var(--pk-bg-secondary)',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  };
 
-  const hasReport = reportStatus?.has_medical_report || false;
+  const fileItemStyle = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '12px',
+    backgroundColor: 'var(--pk-bg)',
+    border: '1px solid var(--pk-border)',
+    borderRadius: '8px',
+    marginBottom: '8px',
+  };
+
+  const hasReport = reportStatus?.can_proceed_with_monitoring || false;
 
   return (
     <div style={containerStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h2 style={{ margin: 0, color: theme.text }}>📋 Medical Report Upload</h2>
-        <span style={statusBadgeStyle(hasReport)}>
-          {hasReport ? '✅ Report Uploaded' : '⚠️ No Report'}
-        </span>
+        <h2 className="text-lg" style={{ margin: 0 }}>📋 Medical Reports</h2>
+        {loading && <span className="text-sm text-muted">Refreshing...</span>}
       </div>
 
-      {/* Status Message */}
-      {hasReport ? (
-        <div style={successStyle}>
-          <strong>✅ Status: Ready for Monitoring</strong><br/>
-          Your medical report has been uploaded and indexed. You can now use the chatbot and symptom monitoring features.
-        </div>
-      ) : (
-        <div style={warningStyle}>
-          <strong>⚠️ MANDATORY: Medical Report Required</strong><br/>
-          Your medical reports must be uploaded BEFORE you can use the chatbot or symptom monitoring. 
-          This ensures all AI responses are personalized to your medical history.
-        </div>
-      )}
-
-      {/* Upload Section (only if no report yet) */}
-      {!hasReport && (
-        <>
-          <div style={{ marginBottom: '24px' }}>
-            <h3 style={{ marginBottom: '12px', color: theme.text }}>Upload Your Medical Report</h3>
-            <p style={{ color: theme.textSecondary, fontSize: '14px' }}>
-              <strong>Supported formats:</strong> PDF, Images (JPG/PNG), or Plain Text<br/>
-              <strong>Max size:</strong> 10MB<br/>
-              <strong>Examples:</strong> Discharge summary, medical history, test results, doctor's notes
-            </p>
+      {/* Status Banner */}
+      <div style={statusBannerStyle(hasReport)}>
+        <span style={{ fontSize: '20px' }}>{hasReport ? '✅' : '⚠️'}</span>
+        <div>
+          <div style={{ fontWeight: 600 }}>
+            {hasReport ? 'Ready for Monitoring' : 'Action Required'}
           </div>
-
-          {/* File Input Area */}
-          <div
-            style={uploadAreaStyle}
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.currentTarget.style.backgroundColor = isDark ? theme.bgSecondary : theme.bgTertiary;
-            }}
-            onDragLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#f0f7ff';
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              e.currentTarget.style.backgroundColor = isDark ? theme.bgTertiary : theme.bgSecondary;
-              if (e.dataTransfer.files[0]) {
-                setSelectedFile(e.dataTransfer.files[0]);
-              }
-            }}
-          >
-            <input
-              ref={(input) => {
-                window.fileInput = input;
-              }}
-              type="file"
-              style={fileInputStyle}
-              onChange={(e) => setSelectedFile(e.target.files[0])}
-              accept=".pdf,.jpg,.jpeg,.png,.txt"
-              disabled={uploading}
-            />
-            <div style={{ fontSize: '48px', marginBottom: '12px' }}>📁</div>
-            <div style={{ fontSize: '16px', fontWeight: 600, marginBottom: '8px', color: theme.text }}>
-              {selectedFile ? selectedFile.name : 'Drag and drop your file here'}
-            </div>
-            <div style={{ fontSize: '14px', color: theme.textSecondary, marginBottom: '16px' }}>
-              or
-            </div>
-            <button
-              onClick={() => window.fileInput?.click()}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: theme.bgSecondary,
-                border: `1px solid ${theme.accent}`,
-                color: theme.accent,
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontWeight: 600,
-                boxShadow: `0 1px 2px ${theme.shadow}`,
-              }}
-              disabled={uploading}
-            >
-              Browse Files
-            </button>
+          <div>
+            {hasReport
+              ? 'Your reports are processed. You can start chatting.'
+              : 'Please upload at least one medical report to enable the chatbot.'}
           </div>
+        </div>
+      </div>
 
-          {/* Error Message */}
-          {uploadError && (
-            <div style={errorStyle}>
-              {uploadError}
-            </div>
-          )}
-
-          {/* Success Message */}
-          {uploadSuccess && (
-            <div style={successStyle}>
-              {uploadSuccess}
-            </div>
-          )}
-
-          {/* Upload Button */}
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button
-              onClick={handleUploadReport}
-              style={buttonStyle}
-              disabled={!selectedFile || uploading}
-            >
-              {uploading ? 'Uploading...' : '📤 Upload Report'}
-            </button>
-            {selectedFile && (
+      {/* Document List */}
+      {documents.length > 0 && (
+        <div style={{ marginBottom: '24px' }}>
+          <h3 className="text-sm text-muted" style={{ marginBottom: '12px', textTransform: 'uppercase' }}>Uploaded Files ({documents.length})</h3>
+          {documents.map((doc, idx) => (
+            <div key={idx} style={fileItemStyle}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '20px' }}>📄</span>
+                <div>
+                  <div style={{ fontWeight: 500 }}>{doc.filename}</div>
+                  <div className="text-xs text-muted">
+                    {Math.round(doc.size_bytes / 1024)} KB • {new Date(doc.uploaded_at).toLocaleDateString()}
+                  </div>
+                </div>
+              </div>
               <button
-                onClick={() => setSelectedFile(null)}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: theme.bgTertiary,
-                  color: theme.text,
-                  border: `1px solid ${theme.border}`,
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                }}
-                disabled={uploading}
+                className="btn btn-outline"
+                style={{ borderColor: 'var(--pk-risk-high-border)', color: 'var(--pk-risk-high-text)', padding: '4px 12px', fontSize: '12px' }}
+                onClick={() => handleDeleteDocument(doc.filename)}
               >
-                Clear
+                Delete
               </button>
-            )}
-          </div>
-        </>
+            </div>
+          ))}
+        </div>
       )}
 
-      {/* Info Section */}
-      <div style={{
-        marginTop: '24px',
-        padding: '16px',
-        backgroundColor: theme.bgSecondary,
-        borderRadius: '8px',
-        border: `1px solid ${theme.border}`,
-        fontSize: '13px',
-        color: theme.textSecondary,
-        lineHeight: '1.6',
-        transition: 'all 0.3s',
-      }}>
-        <strong style={{ color: theme.text }}>ℹ️ How it works:</strong>
-        <ul style={{ margin: '8px 0 0 20px', paddingLeft: 0 }}>
-          <li>Your report is securely processed and stored</li>
-          <li>Text is extracted and split into indexed chunks</li>
-          <li>Your medical history personalizes all AI responses</li>
-          <li>The chatbot uses both your report and medical guidelines</li>
-          <li>Your data is private and not shared with other patients</li>
-        </ul>
+      {/* Upload Area */}
+      <div>
+        <h3 className="text-sm text-muted" style={{ marginBottom: '12px', textTransform: 'uppercase' }}>Upload New Report</h3>
+
+        <div
+          style={uploadAreaStyle}
+          onClick={() => window.fileInput?.click()}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            if (e.dataTransfer.files[0]) setSelectedFile(e.dataTransfer.files[0]);
+          }}
+        >
+          <input
+            ref={(input) => { window.fileInput = input; }}
+            type="file"
+            style={{ display: 'none' }}
+            onChange={(e) => setSelectedFile(e.target.files[0])}
+            accept=".pdf,.jpg,.jpeg,.png,.txt"
+            disabled={uploading}
+          />
+
+          <div style={{ fontSize: '32px', marginBottom: '8px' }}>📤</div>
+          <div style={{ fontWeight: 500, marginBottom: '4px' }}>
+            {selectedFile ? selectedFile.name : 'Click or Drag to Upload'}
+          </div>
+          <div className="text-xs text-muted">PDF, JPG, PNG, TXT (Max 10MB)</div>
+        </div>
+
+        {selectedFile && (
+          <div style={{ marginTop: '12px', display: 'flex', gap: '12px' }}>
+            <button
+              className="btn btn-primary"
+              onClick={handleUploadReport}
+              disabled={uploading}
+              style={{ flex: 1 }}
+            >
+              {uploading ? 'Uploading...' : 'Confirm Upload'}
+            </button>
+            <button
+              className="btn btn-outline"
+              onClick={() => setSelectedFile(null)}
+              disabled={uploading}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {/* Feedback Messages */}
+        {uploadError && (
+          <div style={{ marginTop: '12px', color: 'var(--pk-risk-high-text)', fontSize: '14px' }}>
+            {uploadError}
+          </div>
+        )}
+        {uploadSuccess && (
+          <div style={{ marginTop: '12px', color: 'var(--pk-risk-low-text)', fontSize: '14px' }}>
+            {uploadSuccess}
+          </div>
+        )}
       </div>
     </div>
   );

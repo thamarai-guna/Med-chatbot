@@ -4,12 +4,16 @@ Generates personalized symptom monitoring questions
 Uses patient records + shared medical knowledge
 """
 
+
+
 import os
 import json
 import requests
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from openai import OpenAI
+import google.generativeai as genai
 from patient_manager import get_patient_manager
 
 load_dotenv()
@@ -35,6 +39,27 @@ class DailyQuestionGenerator:
         self.patient_id = patient_id
         self.patient_manager = get_patient_manager()
         
+        # --- Configure Multi-Provider Fallback ---
+        
+        # 1. DeepSeek (Primary)
+        self.deepseek_client = None
+        ds_key = os.getenv("DEEPSEEK_API_KEY")
+        if ds_key:
+            self.deepseek_client = OpenAI(api_key=ds_key, base_url="https://api.deepseek.com")
+        
+        # 2. Groq (Secondary)
+        self.groq_client = None
+        groq_key = os.getenv("GROQ_API_KEY")
+        if groq_key:
+            self.groq_client = OpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
+            
+        # 3. Gemini (Tertiary)
+        self.gemini_model = None
+        gemini_key = os.getenv("GOOGLE_API_KEY")
+        if gemini_key:
+            genai.configure(api_key=gemini_key)
+            self.gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+        
         # Verify patient exists
         patient = self.patient_manager.get_patient(patient_id)
         if not patient:
@@ -42,50 +67,52 @@ class DailyQuestionGenerator:
         
         self.patient_info = patient
     
-    def _call_groq(self, prompt: str, max_tokens: int = 300) -> str:
+    def _call_llm_with_fallback(self, prompt: str) -> str:
         """
-        Call Groq LLM API for question generation
-        
-        Args:
-            prompt: Input prompt
-            max_tokens: Maximum response tokens
-        
-        Returns:
-            Generated text
+        Try LLM providers in order: DeepSeek -> Groq -> Gemini
         """
-        api_key = os.getenv("GROQ_API_KEY")
-        
-        if not api_key:
-            return "Error: GROQ_API_KEY environment variable not set"
-        
-        url = "https://api.groq.com/openai/v1/chat/completions"
-        
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": "llama-3.3-70b-versatile",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            "max_tokens": max_tokens,
-            "temperature": 0.7
-        }
-        
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=30)
-            response.raise_for_status()
-            
-            data = response.json()
-            return data["choices"][0]["message"]["content"].strip()
-            
-        except Exception as e:
-            return f"Error calling Groq API: {str(e)}"
+        # 1. Try DeepSeek (Primary)
+        if self.deepseek_client:
+            try:
+                response = self.deepseek_client.chat.completions.create(
+                    model="deepseek-chat",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=300,
+                    temperature=0.7,
+                    response_format={"type": "json_object"}
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                print(f"⚠️ DeepSeek failed: {e}. Trying Groq...")
+
+        # 2. Try Groq (Secondary)
+        if self.groq_client:
+            try:
+                response = self.groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=300,
+                    temperature=0.7,
+                    response_format={"type": "json_object"}
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                print(f"⚠️ Groq failed: {e}. Trying Gemini...")
+
+        # 3. Try Gemini (Tertiary)
+        if self.gemini_model:
+            try:
+                generation_config = genai.types.GenerationConfig(
+                    max_output_tokens=300,
+                    temperature=0.7,
+                    response_mime_type="application/json"
+                )
+                response = self.gemini_model.generate_content(prompt, generation_config=generation_config)
+                return response.text.strip()
+            except Exception as e:
+                print(f"⚠️ Gemini failed: {e}.")
+
+        return "{}" # Return empty JSON on total failure
     
     def _get_patient_history_summary(self, days: int = 7) -> str:
         """
@@ -190,8 +217,8 @@ RESPONSE FORMAT (JSON only):
 
 Generate ONE daily question now:"""
         
-        # Call Groq API
-        response_text = self._call_groq(prompt, max_tokens=300)
+        # Call LLM with fallback
+        response_text = self._call_llm_with_fallback(prompt)
         
         # Parse JSON response
         try:
@@ -217,6 +244,7 @@ Generate ONE daily question now:"""
         
         except Exception as e:
             # Fallback to generic question if LLM fails
+            print(f"Error parsing DeepSeek response: {e}")
             return self._get_fallback_question()
     
     def _get_fallback_question(self) -> Dict[str, Any]:

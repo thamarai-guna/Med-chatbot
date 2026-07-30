@@ -6,24 +6,31 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import MessageBubble from './MessageBubble';
-import { sendChatMessage, getChatHistory } from '../api/api';
+import { sendChatMessage, getChatHistory, clearChatHistory } from '../api/api';
 
 const ChatBox = ({ patientId }) => {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const { theme } = useTheme();
 
-  // Load chat history on mount
+  const suggestedPrompts = [
+    'What are common side effects of my medication?',
+    'I have a fever and cough—what should I do?',
+    'Explain my latest lab results in simple terms.',
+    'How should I manage my diabetes today?',
+  ];
+
   useEffect(() => {
     if (patientId) {
       loadHistory();
     }
   }, [patientId]);
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
     scrollToBottom();
   }, [messages, loading]);
@@ -32,10 +39,16 @@ const ChatBox = ({ patientId }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const handleScroll = () => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    setShowJumpToLatest(!nearBottom);
+  };
+
   const loadHistory = async () => {
     try {
       const history = await getChatHistory(patientId);
-      // Convert history format to messages
       const formattedMessages = [];
       history.history?.forEach((item) => {
         formattedMessages.push({
@@ -48,6 +61,7 @@ const ChatBox = ({ patientId }) => {
           isUser: false,
           risk_level: item.risk_level,
           risk_reason: item.risk_reason,
+          action: item.action,
           source_documents: item.source_documents,
           timestamp: item.timestamp,
         });
@@ -58,6 +72,21 @@ const ChatBox = ({ patientId }) => {
     }
   };
 
+  const handleClearChat = async () => {
+    if (window.confirm('Start a fresh check-in? This will clear your current conversation history.')) {
+      try {
+        setLoading(true);
+        await clearChatHistory(patientId);
+        setMessages([]);
+        setError(null);
+      } catch (err) {
+        setError('Failed to clear chat history');
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
   const handleSend = async () => {
     if (!inputMessage.trim() || loading) return;
 
@@ -65,32 +94,28 @@ const ChatBox = ({ patientId }) => {
     setInputMessage('');
     setError(null);
 
-    // Add user message to UI immediately
     const newUserMsg = {
       message: userMessage,
       isUser: true,
       timestamp: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, newUserMsg]);
-
     setLoading(true);
 
     try {
       const response = await sendChatMessage(patientId, userMessage);
-
-      // Add AI response to messages
       const aiMessage = {
         message: response.answer,
         isUser: false,
         risk_level: response.risk_level,
         risk_reason: response.risk_reason,
+        action: response.action,
         source_documents: response.source_documents,
         timestamp: response.timestamp,
       };
       setMessages((prev) => [...prev, aiMessage]);
     } catch (err) {
       setError(err.message || 'Failed to send message');
-      // Remove user message on error
       setMessages((prev) => prev.slice(0, -1));
     } finally {
       setLoading(false);
@@ -107,20 +132,16 @@ const ChatBox = ({ patientId }) => {
   const containerStyle = {
     display: 'flex',
     flexDirection: 'column',
-    height: '650px',
-    backgroundColor: theme.bgSecondary,
-    borderRadius: '12px',
-    border: `1px solid ${theme.border}`,
+    height: '100%', // Changed from fixed 650px to 100%
+    backgroundColor: 'var(--pk-bg-secondary)',
     overflow: 'hidden',
-    boxShadow: `0 4px 12px ${theme.shadowMd}`,
-    transition: 'all 0.3s',
   };
 
   const messagesStyle = {
     flex: 1,
     overflowY: 'auto',
     padding: '24px',
-    backgroundColor: theme.bgSecondary,
+    backgroundColor: 'var(--pk-bg-secondary)',
     display: 'flex',
     flexDirection: 'column',
     gap: '4px',
@@ -129,8 +150,8 @@ const ChatBox = ({ patientId }) => {
 
   const inputContainerStyle = {
     padding: '16px 24px 24px 24px',
-    backgroundColor: theme.bgSecondary,
-    borderTop: `1px solid ${theme.border}`,
+    backgroundColor: 'var(--pk-bg-secondary)',
+    borderTop: '1px solid var(--pk-border)',
     display: 'flex',
     gap: '12px',
     alignItems: 'flex-end',
@@ -146,11 +167,11 @@ const ChatBox = ({ patientId }) => {
   const inputStyle = {
     width: '100%',
     padding: '12px 16px',
-    border: `1px solid ${theme.border}`,
+    border: '1px solid var(--pk-border)',
     borderRadius: '24px',
     fontSize: '15px',
-    backgroundColor: theme.bg,
-    color: theme.text,
+    backgroundColor: 'var(--pk-bg)',
+    color: 'var(--pk-text)',
     outline: 'none',
     transition: 'all 0.2s',
   };
@@ -166,6 +187,34 @@ const ChatBox = ({ patientId }) => {
     fontWeight: '600',
     opacity: loading ? 0.7 : 1,
     transition: 'background-color 0.2s',
+  };
+
+  const chipStyle = {
+    display: 'inline-block',
+    padding: '8px 12px',
+    marginRight: '8px',
+    marginTop: '8px',
+    borderRadius: '16px',
+    border: `1px solid ${theme.border}`,
+    backgroundColor: theme.bg,
+    color: theme.text,
+    fontSize: '13px',
+    cursor: 'pointer',
+    boxShadow: `0 1px 2px ${theme.shadow}`,
+  };
+
+  const jumpButtonStyle = {
+    position: 'sticky',
+    bottom: 12,
+    alignSelf: 'center',
+    padding: '6px 10px',
+    backgroundColor: theme.bgTertiary,
+    color: theme.text,
+    border: `1px solid ${theme.border}`,
+    borderRadius: '12px',
+    fontSize: '12px',
+    cursor: 'pointer',
+    boxShadow: `0 1px 2px ${theme.shadow}`,
   };
 
   const emptyStateStyle = {
@@ -196,32 +245,77 @@ const ChatBox = ({ patientId }) => {
     transition: 'all 0.3s',
   };
 
+  const clearButtonStyle = {
+    position: 'absolute',
+    top: '12px',
+    right: '24px',
+    zIndex: 10,
+    padding: '6px 12px',
+    backgroundColor: 'transparent',
+    color: theme.textSecondary,
+    border: `1px solid ${theme.border}`,
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    opacity: 0.6,
+    transition: 'opacity 0.2s',
+  };
+
   return (
     <div style={containerStyle}>
-      <div style={messagesStyle}>
+      {messages.length > 0 && (
+        <button
+          style={clearButtonStyle}
+          onClick={handleClearChat}
+          title="Clear conversation history"
+          onMouseEnter={(e) => e.target.style.opacity = '1'}
+          onMouseLeave={(e) => e.target.style.opacity = '0.6'}
+        >
+          Restart Check-in ↻
+        </button>
+      )}
+      <div style={messagesStyle} onScroll={handleScroll} ref={messagesContainerRef}>
         {messages.length === 0 && (
           <div style={emptyStateStyle}>
             <div style={{ fontSize: '18px', fontWeight: '500', marginBottom: '8px' }}>
               👋 Welcome to Your Medical Assistant
             </div>
             <div>Type your medical question to get started</div>
+            <div style={{ marginTop: '12px' }}>
+              {suggestedPrompts.map((p, i) => (
+                <span key={i} style={chipStyle} onClick={() => setInputMessage(p)}>
+                  {p}
+                </span>
+              ))}
+            </div>
           </div>
         )}
+
         {messages.map((msg, idx) => (
           <MessageBubble key={idx} message={msg} isUser={msg.isUser} />
         ))}
+
         {loading && (
           <div style={loadingStyle}>
-            ✓ AI is thinking...
+            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: 6, backgroundColor: theme.accent, marginRight: 4, opacity: 0.9 }}></span>
+            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: 6, backgroundColor: theme.accent, marginRight: 4, opacity: 0.7 }}></span>
+            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: 6, backgroundColor: theme.accent, opacity: 0.5 }}></span>
           </div>
         )}
+
         {error && (
           <div style={errorStyle}>
             ⚠️ {error}
           </div>
         )}
+
+        {showJumpToLatest && (
+          <button style={jumpButtonStyle} onClick={scrollToBottom}>Jump to latest ↓</button>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
+
       <div style={inputContainerStyle}>
         <div style={inputWrapperStyle}>
           <input
@@ -234,8 +328,8 @@ const ChatBox = ({ patientId }) => {
             disabled={loading}
           />
         </div>
-        <button onClick={handleSend} disabled={loading} style={buttonStyle}>
-          {loading ? '⏳' : '→'}
+        <button onClick={handleSend} disabled={loading} style={buttonStyle} aria-label="Send message">
+          {loading ? '⏳' : '➤'}
         </button>
       </div>
     </div>

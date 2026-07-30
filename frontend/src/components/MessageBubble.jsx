@@ -64,6 +64,11 @@ const MessageBubble = ({ message, isUser }) => {
                 {message.risk_reason}
               </div>
             )}
+            {message.action && (
+              <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: '600', color: theme.text }}>
+                👉 Action: {message.action}
+              </div>
+            )}
           </div>
         )}
       </div>

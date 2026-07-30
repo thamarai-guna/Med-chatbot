@@ -1,0 +1,5 @@
+Patient: John Doe
+Age: 45
+Condition: Post-stroke recovery.
+History: Patient suffered a mild ischemic stroke 2 weeks ago. Experiencing some left-side weakness.
+Current Meds: Aspirin, Atorvastatin.
